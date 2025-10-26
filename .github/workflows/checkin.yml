@@ -54,4 +54,4 @@ jobs:
         
       run: |
         # 💥 关键修改：运行 XserverRenewal.py 脚本文件
-        python XserverRenewal.py
+        python leaflow_checkin.py
