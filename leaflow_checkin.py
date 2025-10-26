@@ -94,7 +94,6 @@ class XserverRenewal:
             
             # 4. 确保文件存在且具有执行权限
             if not os.path.exists(final_driver_path):
-                 # 这是防御性代码，理论上不应触发
                  raise FileNotFoundError(f"致命错误：未找到预期的驱动文件: {final_driver_path}")
             
             # 赋予执行权限
@@ -179,11 +178,12 @@ class XserverRenewal:
                 # 必须点击这个管理链接才能进入续费页面
                 manage_link.click()
                 
-                # 再次等待，确保跳转到真正的服务管理页面 (包含 'manage')
+                # 💥 关键修改: 接受新的URL路径 authority 或 manage
+                # 再次等待，确保跳转到真正的服务管理页面
                 WebDriverWait(self.driver, 15).until(
-                    EC.url_contains("manage")
+                    EC.url_contains("manage") or EC.url_contains("authority")
                 )
-                logger.info("已成功跳转到服务管理页面。")
+                logger.info("已成功跳转到服务管理页面（或权限页面）。")
                 return True
                 
             except NoSuchElementException:
@@ -206,11 +206,11 @@ class XserverRenewal:
     def renew_service(self):
         """执行续期操作"""
         RENEWAL_PAGE_URL = "https://secure.xserver.ne.jp/xapanel/manage/xmgame/game"
-        # 注意：现在我们在 login() 中已经跳转到了正确的 manage 页面，
-        # 所以理论上我们不需要 driver.get(RENEWAL_PAGE_URL)，但为了鲁棒性可以保留。
         
-        # self.driver.get(RENEWAL_PAGE_URL) # 暂时注释，因为 login() 应该已经跳转到位
-        logger.info("已位于服务管理页，等待加载续期信息...")
+        # 💥 关键修改: 强制导航到续费页面，确保从 authority 页面正确进入
+        self.driver.get(RENEWAL_PAGE_URL) 
+        
+        logger.info("已导航到服务管理页，等待加载...")
         time.sleep(5)  # 给予页面充分加载时间
         
         try:
