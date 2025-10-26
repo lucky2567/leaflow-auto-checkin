@@ -1,9 +1,11 @@
-name: Leaflow Auto Checkin
+name: Xserver Auto Renewal
 
 on:
   schedule:
-    - cron: '0 1 * * *' # 每天UTC时间01:00运行（北京时间09:00）
-  workflow_dispatch:  # 允许手动触发
+    # 每天UTC时间01:00运行（北京时间09:00）
+    - cron: '0 1 * * *' 
+  # 允许手动触发
+  workflow_dispatch: 
 
 jobs:
   checkin:
@@ -21,20 +23,35 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        # 假设 requirements.txt 中包含了 selenium, requests, etc.
         pip install -r requirements.txt
         
     - name: Install Chrome
       run: |
         sudo apt-get update
+        # 确保安装了 Google Chrome 稳定版
         sudo apt-get install -y google-chrome-stable
         
-    - name: Run auto checkin
+    - name: Run Xserver Renewal Script 🛠️
+      # =========================================================
+      # 💥 关键修改：更换为 Xserver 脚本所需的环境变量
+      # =========================================================
       env:
-        LEAFLOW_ACCOUNTS: ${{ secrets.LEAFLOW_ACCOUNTS }}
-        LEAFLOW_EMAIL: ${{ secrets.LEAFLOW_EMAIL }}
-        LEAFLOW_PASSWORD: ${{ secrets.LEAFLOW_PASSWORD }}
+        # Xserver 单账号登录凭证 (必填)
+        XSERVER_USERNAME: ${{ secrets.XSERVER_USERNAME }}
+        XSERVER_PASSWORD: ${{ secrets.XSERVER_PASSWORD }}
+        
+        # Xserver 多账号列表 (可选, 优先级低于单账号)
+        # 如果您使用 XSERVER_ACCOUNTS，则不需要设置 USERNAME/PASSWORD
+        XSERVER_ACCOUNTS: ${{ secrets.XSERVER_ACCOUNTS }}
+        
+        # Telegram 通知设置 (可选)
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        GITHUB_ACTIONS: true
+        
+        # 标志当前运行环境为 GitHub Actions (由脚本读取)
+        GITHUB_ACTIONS: true 
+        
       run: |
-        python leaflow_checkin.py
+        # 💥 关键修改：运行 XserverRenewal.py 脚本文件
+        python XserverRenewal.py
