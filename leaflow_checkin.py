@@ -2,23 +2,27 @@
 """
 Xserver 游戏面板自动续期脚本
 
+功能：
+1. 登录 Xserver 游戏面板。
+2. 自动完成免费套餐的续期流程（アップグレード・期限延長 -> 期限を延長する -> 確認画面に進む -> 更新実行）。
+3. 包含强大的稳定性措施，如 JS 强制点击、硬等待、元素 Stale 重试，以及 ChromeDriver 路径兼容性修复。
+4. 支持通过 Telegram 发送通知（可选）。
+
 使用方法：
 在运行环境中设置以下环境变量/Secrets：
-1. 单账号模式（推荐）：
-    - XSERVER_USERNAME：您的 Xserver 登录ID
-    - XSERVER_PASSWORD：您的 Xserver 密码
-    - XSERVER_SERVER_ID：您的 Xserver 服务器标识符/客户ID (新增必填项)
-2. 多账号模式（次选）：
-    - XSERVER_ACCOUNTS：ID1:Pass1,ID2:Pass2,... (逗号分隔)
+- XSERVER_USERNAME：您的 Xserver 登录ID
+- XSERVER_PASSWORD：您的 Xserver 密码
+- XSERVER_SERVER_ID：您的 Xserver 服务器标识符/客户ID (必填项)
 
 可选通知：
-    - TELEGRAM_BOT_TOKEN
-    - TELEGRAM_CHAT_ID
+- TELEGRAM_BOT_TOKEN
+- TELEGRAM_CHAT_ID
 """
 
 import os
 import time
 import logging
+import sys
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -29,7 +33,6 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 import requests
 from datetime import datetime
 from webdriver_manager.chrome import ChromeDriverManager
-import sys
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -53,10 +56,10 @@ class XserverRenewal:
         self.setup_driver()
     
     def setup_driver(self):
-        """设置Chrome驱动选项并自动管理ChromeDriver"""
+        """设置Chrome驱动选项并自动管理ChromeDriver，包含路径兼容性修复"""
         chrome_options = Options()
         
-        # GitHub Actions环境（无头模式）
+        # GitHub Actions环境配置 (无头模式)
         if os.getenv('GITHUB_ACTIONS') or os.getenv('CHROME_HEADLESS', 'true').lower() == 'true':
             chrome_options.add_argument('--headless')
             chrome_options.add_argument('--no-sandbox')
@@ -72,8 +75,41 @@ class XserverRenewal:
         try:
             logger.info("正在自动下载并配置 ChromeDriver...")
             
-            # 使用 Service/ChromeDriverManager 组合确保可靠性
-            service = Service(ChromeDriverManager().install())
+            # 1. 使用 ChromeDriverManager 下载驱动
+            # 返回值 driver_path_returned 是驱动文件在缓存中的路径，但可能指向一个目录或错误的文件
+            driver_path_returned = ChromeDriverManager().install()
+            
+            # 2. 路径修正逻辑：解决 [Errno 8] Exec format error 和路径解析错误
+            final_driver_path = None
+            
+            if os.path.isfile(driver_path_returned) and 'chromedriver' in driver_path_returned:
+                # 理想情况：返回的就是可执行文件路径
+                final_driver_path = driver_path_returned
+            else:
+                # 非理想情况：尝试在子文件夹中找到实际的 'chromedriver' 可执行文件
+                base_dir = os.path.dirname(driver_path_returned) 
+                
+                # 遍历所有子目录，查找名为 'chromedriver' 的文件
+                for root, dirs, files in os.walk(base_dir):
+                    if 'chromedriver' in files:
+                        final_driver_path = os.path.join(root, 'chromedriver')
+                        break
+                
+                # 如果没找到，退回到原始路径
+                if not final_driver_path:
+                    final_driver_path = driver_path_returned 
+
+            logger.info(f"最终驱动路径: {final_driver_path}")
+            
+            if not os.path.exists(final_driver_path):
+                 raise FileNotFoundError(f"致命错误：未找到预期的驱动文件在 {final_driver_path}")
+
+            # 3. 赋予执行权限 (解决权限或格式错误)
+            os.chmod(final_driver_path, 0o755) 
+            logger.info("已赋予驱动文件执行权限 (0755)。")
+
+            # 4. 使用构造的正确路径初始化 Service
+            service = Service(final_driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             logger.info("Chrome 驱动启动成功。")
@@ -82,6 +118,7 @@ class XserverRenewal:
             logger.error(f"驱动初始化失败: {e}")
             raise
     
+    # 以下为辅助函数（未修改）
     def wait_for_element_clickable(self, by, value, timeout=20):
         """等待元素可点击"""
         return WebDriverWait(self.driver, timeout).until(
@@ -107,7 +144,7 @@ class XserverRenewal:
             username_input = self.wait_for_element_clickable(By.NAME, "username", 15)
             username_input.send_keys(self.username)
             
-            # 2. 服务器标识符 (name="server_identify")
+            # 2. サーバー識別子 (name="server_identify")
             server_id_input = self.wait_for_element_clickable(By.NAME, "server_identify", 15)
             server_id_input.send_keys(self.server_id)
             
@@ -191,7 +228,7 @@ class XserverRenewal:
                 
             logger.info("等待跳转到套餐比较/确认页面...")
             
-            # **最关键的等待：15秒的硬等待，等待DOM完全稳定**
+            # **DOM安定のための超長硬待ち (15秒)**
             time.sleep(15) 
             logger.info("15秒硬等待完成。尝试进行下一步点击...")
             
