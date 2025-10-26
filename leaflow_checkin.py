@@ -27,11 +27,12 @@ from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 import requests
 from datetime import datetime
+import os.path
 
-# 💥 关键修改 1: 导入 webdriver-manager 相关的库和 os 路径处理
+# 💥 导入 webdriver-manager 相关的库
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-import os.path
+
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -74,29 +75,26 @@ class XserverRenewal:
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
-            # 💥 关键修改 2: 最终修复 Exec format error (手动回溯路径到可执行文件)
+            # 💥 最终修复: 解决 webdriver-manager 返回错误路径的问题 (手动回溯路径到可执行文件)
             logger.info("正在自动下载并配置 ChromeDriver...")
             
             # 1. 使用 ChromeDriverManager().install() 获取路径
-            # 此时返回的是错误的路径，指向 THIRD_PARTY_NOTICES.chromedriver 文件
             driver_path_returned = ChromeDriverManager().install()
             
             logger.info(f"WebDriverManager 返回的路径: {driver_path_returned}")
             
             # 2. 通过 os.path.dirname() 回溯，找到真正的驱动目录
-            # 回溯一级：移除了 THIRD_PARTY_NOTICES.chromedriver 文件名
             parent_dir = os.path.dirname(driver_path_returned) 
-            # 回溯二级：移除了 chromedriver-linux64 目录（或相似目录名）
             base_dir = os.path.dirname(parent_dir)
             
             # 3. 构造正确的最终驱动可执行文件路径
-            # 真正的驱动文件在 base_dir/chromedriver-linux64/chromedriver
             final_driver_path = os.path.join(base_dir, 'chromedriver-linux64', 'chromedriver')
             
             logger.info(f"尝试的最终驱动路径: {final_driver_path}")
             
             # 4. 确保文件存在且具有执行权限
             if not os.path.exists(final_driver_path):
+                 # 这是防御性代码，理论上不应触发
                  raise FileNotFoundError(f"致命错误：未找到预期的驱动文件: {final_driver_path}")
             
             # 赋予执行权限
@@ -124,6 +122,7 @@ class XserverRenewal:
             EC.presence_of_element_located((by, value))
         )
     
+    # 💥 关键修改 3: 修正登录成功后的页面跳转逻辑
     def login(self):
         """执行 Xserver 登录流程"""
         logger.info(f"开始登录 Xserver 面板")
@@ -160,23 +159,45 @@ class XserverRenewal:
             login_btn.click()
             logger.info("已点击登录按钮")
             
-            # 等待登录完成，跳转到仪表板页面 (URL包含 'manage' 或 'top')
+            # 等待跳转到任何新页面，且不再停留在要求输入 username 的登录页
             WebDriverWait(self.driver, 20).until(
-                EC.url_contains("manage") or EC.url_contains("top")
+                lambda driver: "username" not in driver.current_url
             )
-            
+            time.sleep(5) # 额外等待页面内容加载
+
             current_url = self.driver.current_url
-            if "manage" in current_url or "top" in current_url:
-                logger.info(f"登录成功，当前URL: {current_url}")
+            
+            # 新的成功判断逻辑：检查页面上是否存在跳转到服务管理的按钮/链接
+            try:
+                # 尝试找到一个明确指示登录成功的元素 (例如，一个管理按钮/链接)
+                manage_link = self.driver.find_element(
+                    By.XPATH, 
+                    "//a[contains(text(), '管理') or contains(text(), 'Manage')] | //button[contains(text(), '管理') or contains(text(), 'Manage')]"
+                )
+                logger.info(f"登录成功，当前URL: {current_url}。已找到管理链接。")
+                
+                # 必须点击这个管理链接才能进入续费页面
+                manage_link.click()
+                
+                # 再次等待，确保跳转到真正的服务管理页面 (包含 'manage')
+                WebDriverWait(self.driver, 15).until(
+                    EC.url_contains("manage")
+                )
+                logger.info("已成功跳转到服务管理页面。")
                 return True
-            else:
+                
+            except NoSuchElementException:
+                # 如果找不到管理链接，则检查是否停留在错误页面
                 if "認証エラー" in self.driver.page_source or "Error" in self.driver.page_source or "username" in self.driver.current_url:
                     raise Exception("登录失败：登录凭证/服务器标识符错误。")
-                raise Exception("登录后未跳转到服务管理页。")
+                
+                # 如果既不是错误页面，又没有管理链接，可能是页面结构大变
+                raise Exception(f"登录成功，但未找到预期的服务管理链接。当前URL: {current_url}")
             
         except TimeoutException:
             raise Exception(f"登录页面元素加载超时或登录后未跳转。当前URL: {self.driver.current_url}")
         except NoSuchElementException:
+            # 这通常意味着登录页面元素的定位器失效，但不应在登录后发生
             raise Exception("登录页面元素定位失败，请检查选择器。")
         except Exception as e:
             raise Exception(f"登录失败: {str(e)}")
@@ -185,8 +206,11 @@ class XserverRenewal:
     def renew_service(self):
         """执行续期操作"""
         RENEWAL_PAGE_URL = "https://secure.xserver.ne.jp/xapanel/manage/xmgame/game"
-        self.driver.get(RENEWAL_PAGE_URL)
-        logger.info("已导航到服务管理页，等待加载...")
+        # 注意：现在我们在 login() 中已经跳转到了正确的 manage 页面，
+        # 所以理论上我们不需要 driver.get(RENEWAL_PAGE_URL)，但为了鲁棒性可以保留。
+        
+        # self.driver.get(RENEWAL_PAGE_URL) # 暂时注释，因为 login() 应该已经跳转到位
+        logger.info("已位于服务管理页，等待加载续期信息...")
         time.sleep(5)  # 给予页面充分加载时间
         
         try:
