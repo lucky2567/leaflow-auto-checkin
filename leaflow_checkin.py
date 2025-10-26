@@ -228,16 +228,30 @@ class XserverRenewal:
             # 1. 查找并点击主页上的入口按钮 (Step 1: Go to renewal page)
             logger.info("查找主页上引导进入续期流程的入口按钮...")
             
-            entry_btn_xpath = (
+            # 使用最精确的 XPath 定位“期限を延長する”按钮
+            entry_btn_xpath = "//a[@href='/xmgame/game/freeplan/extend/input']"
+
+            # 备选 XPath (如果精确的链接定位失败)
+            backup_entry_btn_xpath = (
                 "//button[contains(text(), '期限延長') or contains(text(), '期限を延長する') or contains(text(), '期限を延長していただく必要がございます') or contains(text(), 'アップグレード・期限延長')] | "
                 "//a[contains(text(), '期限延長') or contains(text(), '期限を延長する') or contains(text(), '期限を延長していただく必要がございます') or contains(text(), 'アップグレード・期限延長')]"
             )
             
-            entry_btn = self.wait_for_element_clickable(
-                By.XPATH, 
-                entry_btn_xpath,
-                20
-            )
+            try:
+                entry_btn = self.wait_for_element_clickable(
+                    By.XPATH, 
+                    entry_btn_xpath,
+                    15 # 首次尝试使用精确的 XPath
+                )
+            except TimeoutException:
+                logger.warning("精确的续期入口按钮定位失败，尝试使用模糊 XPath...")
+                entry_btn = self.wait_for_element_clickable(
+                    By.XPATH, 
+                    backup_entry_btn_xpath,
+                    15
+                )
+
+            
             # 使用 JS 强制点击入口按钮，以防主页有悬浮物遮挡
             try:
                 entry_btn.click()
@@ -256,7 +270,7 @@ class XserverRenewal:
             if "更新済み" in self.driver.page_source or "Already Renewed" in self.driver.page_source:
                 return "今日已续期"
             
-            # 最终执行按钮/中间确认按钮 - 包含所有可能性 (已更新)
+            # 最终执行按钮/中间确认按钮 - 包含所有可能性
             confirm_execute_btn_xpath = (
                 "//button[contains(text(), '延長手続きを行う') or contains(text(), '確認画面に進む') or contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択') or contains(text(), '確定') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する') or contains(text(), '申し込む') or contains(text(), '契約')] | "
                 "//a[contains(text(), '延長手続きを行う') or contains(text(), '確認画面に進む') or contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択') or contains(text(), '確定') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する') or contains(text(), '申し込む') or contains(text(), '契約')]"
@@ -281,23 +295,15 @@ class XserverRenewal:
                         current_btn = self.wait_for_element_clickable(
                             By.XPATH, 
                             confirm_execute_btn_xpath,
-                            20 # <--- 延长等待时间
+                            20 # 延长等待时间
                         )
                         
                         if not current_btn.is_enabled():
                             raise Exception("找到的确认按钮不可用，流程中断。")
 
-                        # 解决点击被拦截的问题：优先常规点击，失败则使用 JS 强制点击
-                        try:
-                            current_btn.click()
-                            logger.info(f"使用常规点击成功。按钮文本: {current_btn.text}")
-                        except ElementClickInterceptedException:
-                            self.driver.execute_script("arguments[0].click();", current_btn)
-                            logger.warning(f"点击被拦截，已强制使用 JS 点击。按钮文本: {current_btn.text}")
-                        except WebDriverException as e:
-                            # 捕获其他 WebDriverException，尝试 JS 强制点击
-                            self.driver.execute_script("arguments[0].click();", current_btn)
-                            logger.warning(f"常规点击失败 ({str(e)}), 尝试强制 JS 点击。按钮文本: {current_btn.text}")
+                        # **关键更改：优先使用 JS 强制点击**
+                        self.driver.execute_script("arguments[0].click();", current_btn)
+                        logger.info(f"✅ 使用 JS 强制点击成功。按钮文本: {current_btn.text}")
                         
                         # 成功点击
                         clicked = True
@@ -306,7 +312,8 @@ class XserverRenewal:
                     except StaleElementReferenceException:
                         retry_stale += 1
                         logger.warning(f"检测到 Stale Element 错误，尝试重新定位并点击... (第 {retry_stale} 次)")
-                        time.sleep(2) # 短暂等待 DOM 稳定
+                        # **关键更改：延长等待时间**
+                        time.sleep(5) # 增加等待时间，给页面足够时间稳定DOM
                         continue # 进入下一次 while 循环
                     except TimeoutException:
                         # 如果定位超时，退出 while 循环，进入后面的检查
