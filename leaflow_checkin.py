@@ -256,10 +256,10 @@ class XserverRenewal:
             if "更新済み" in self.driver.page_source or "Already Renewed" in self.driver.page_source:
                 return "今日已续期"
             
-            # 最终执行按钮/中间确认按钮 - 包含所有可能性
+            # 最终执行按钮/中间确认按钮 - 包含所有可能性 (已更新)
             confirm_execute_btn_xpath = (
-                "//button[contains(text(), '延長手続きを行う') or contains(text(), '確認画面に進む') or contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択') or contains(text(), '確定') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する')] | "
-                "//a[contains(text(), '延長手続きを行う') or contains(text(), '確認画面に進む') or contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択') or contains(text(), '確定') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する')]"
+                "//button[contains(text(), '延長手続きを行う') or contains(text(), '確認画面に進む') or contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択') or contains(text(), '確定') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する') or contains(text(), '申し込む') or contains(text(), '契約')] | "
+                "//a[contains(text(), '延長手続きを行う') or contains(text(), '確認画面に進む') or contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択') or contains(text(), '確定') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する') or contains(text(), '申し込む') or contains(text(), '契約')]"
             )
 
             logger.info("在跳转后的页面上，循环查找执行或进入下一确认步骤的按钮...")
@@ -281,7 +281,7 @@ class XserverRenewal:
                         current_btn = self.wait_for_element_clickable(
                             By.XPATH, 
                             confirm_execute_btn_xpath,
-                            10 
+                            20 # <--- 延长等待时间
                         )
                         
                         if not current_btn.is_enabled():
