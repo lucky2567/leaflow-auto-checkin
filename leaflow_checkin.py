@@ -28,9 +28,10 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 import requests
 from datetime import datetime
 
-# 💥 关键修改 1: 导入 webdriver-manager 相关的库
+# 💥 关键修改 1: 导入 webdriver-manager 相关的库和 os 路径处理
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+import os.path
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -45,8 +46,7 @@ class XserverRenewal:
         self.username = username
         self.password = password
         
-        # 💥 关键更新 2: 读取服务器标识符
-        # 注意：此处从环境变量读取，并将其作为必填项检查
+        # 关键更新: 从环境变量读取服务器标识符
         self.server_id = os.getenv('XSERVER_SERVER_ID', '').strip()
         
         # 验证所有必要凭证
@@ -57,7 +57,7 @@ class XserverRenewal:
         self.setup_driver()
     
     def setup_driver(self):
-        """设置Chrome驱动选项并自动管理ChromeDriver"""
+        """设置Chrome驱动选项并自动管理ChromeDriver (已修复 Exec format error)"""
         chrome_options = Options()
         
         # GitHub Actions环境配置 (无头模式)
@@ -74,14 +74,43 @@ class XserverRenewal:
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
-            # 💥 关键修改 3: 使用 ChromeDriverManager 自动获取驱动
+            # 💥 关键修改 2: 修复 Exec format error (手动拼接正确的驱动路径)
             logger.info("正在自动下载并配置 ChromeDriver...")
-            service = Service(ChromeDriverManager().install())
+            
+            # 1. 使用 ChromeDriverManager().install() 获取驱动所在目录
+            # 它返回的路径通常是驱动版本目录，例如: /home/runner/.wdm/drivers/chromedriver/linux64/140.0.7339.207
+            driver_dir = ChromeDriverManager().install()
+            
+            # 2. 构造正确的可执行文件路径
+            # 驱动文件在 Linux 上通常在 driver_dir/chromedriver-linux64/chromedriver 
+            final_driver_path = os.path.join(driver_dir, 'chromedriver-linux64', 'chromedriver')
+            
+            # 如果路径不存在 (可能是不同的解压结构), 尝试其他路径
+            if not os.path.exists(final_driver_path):
+                # 尝试次常见的路径：直接在根目录
+                final_driver_path = os.path.join(driver_dir, 'chromedriver')
+            
+            logger.info(f"WebDriverManager 下载目录: {driver_dir}")
+            logger.info(f"尝试的最终驱动路径: {final_driver_path}")
+            
+            # 3. 确保文件存在且具有执行权限
+            if not os.path.exists(final_driver_path):
+                 raise FileNotFoundError(f"未找到预期的驱动文件: {final_driver_path}")
+            
+            # 赋予执行权限 (rwx for owner, rx for group/others)
+            os.chmod(final_driver_path, 0o755) 
+
+            # 4. 使用构造的正确路径初始化 Service
+            service = Service(final_driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             logger.info("Chrome 驱动启动成功。")
+            
         except WebDriverException as e:
-            logger.error(f"启动Chrome驱动失败 (WebDriverException)。请检查 'webdriver-manager' 是否安装或 Chrome 是否可用: {e}")
+            logger.error(f"启动Chrome驱动失败 (WebDriverException)。请检查路径或权限: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"驱动初始化失败: {e}")
             raise
     
     def wait_for_element_clickable(self, by, value, timeout=20):
@@ -134,7 +163,7 @@ class XserverRenewal:
             
             # 等待登录完成，跳转到仪表板页面 (URL包含 'manage' 或 'top')
             WebDriverWait(self.driver, 20).until(
-                lambda driver: "manage" in driver.current_url or "top" in driver.current_url
+                EC.url_contains("manage") or EC.url_contains("top")
             )
             
             current_url = self.driver.current_url
@@ -228,7 +257,7 @@ class XserverRenewal:
                 success = "✅" in result or "已续期" in result
                 return success, result, info_summary
             else:
-                pass # 登录失败已在 login() 中抛出异常
+                pass 
                 
         except Exception as e:
             error_msg = f"自动续期失败: {str(e)}"
@@ -277,7 +306,6 @@ class MultiAccountManager:
         single_password = os.getenv('XSERVER_PASSWORD', '').strip()
         
         if single_username and single_password:
-            # 单账号配置，只传入 username/password，server_id会在 XserverRenewal.__init__ 中从 env 读取
             accounts.append({'username': single_username, 'password': single_password})
             logger.info("加载了单个账号配置 (来自 XSERVER_USERNAME/PASSWORD)")
             return accounts
@@ -323,7 +351,6 @@ class MultiAccountManager:
     def run_all(self):
         """运行所有账号的续期流程"""
         if not self.accounts:
-            # 如果 load_accounts 抛出异常，就不会到这里，这是额外的防御性检查
             logger.error("无账号可处理，退出。")
             return False, []
             
@@ -334,7 +361,6 @@ class MultiAccountManager:
             logger.info(f"处理第 {i}/{len(self.accounts)} 个账号 ({account['username']})")
             
             try:
-                # XserverRenewal.__init__ 将读取 XSERVER_SERVER_ID 环境变量
                 renewal = XserverRenewal(account['username'], account['password']) 
                 success, result, info_summary = renewal.run() 
                 results.append((account['username'], success, result, info_summary))
