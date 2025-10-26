@@ -74,41 +74,40 @@ class XserverRenewal:
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
-            # 💥 关键修改 2: 修复 Exec format error (手动拼接正确的驱动路径)
+            # 💥 关键修改 2: 最终修复 Exec format error (手动回溯路径到可执行文件)
             logger.info("正在自动下载并配置 ChromeDriver...")
             
-            # 1. 使用 ChromeDriverManager().install() 获取驱动所在目录
-            # 它返回的路径通常是驱动版本目录，例如: /home/runner/.wdm/drivers/chromedriver/linux64/140.0.7339.207
-            driver_dir = ChromeDriverManager().install()
+            # 1. 使用 ChromeDriverManager().install() 获取路径
+            # 此时返回的是错误的路径，指向 THIRD_PARTY_NOTICES.chromedriver 文件
+            driver_path_returned = ChromeDriverManager().install()
             
-            # 2. 构造正确的可执行文件路径
-            # 驱动文件在 Linux 上通常在 driver_dir/chromedriver-linux64/chromedriver 
-            final_driver_path = os.path.join(driver_dir, 'chromedriver-linux64', 'chromedriver')
+            logger.info(f"WebDriverManager 返回的路径: {driver_path_returned}")
             
-            # 如果路径不存在 (可能是不同的解压结构), 尝试其他路径
-            if not os.path.exists(final_driver_path):
-                # 尝试次常见的路径：直接在根目录
-                final_driver_path = os.path.join(driver_dir, 'chromedriver')
+            # 2. 通过 os.path.dirname() 回溯，找到真正的驱动目录
+            # 回溯一级：移除了 THIRD_PARTY_NOTICES.chromedriver 文件名
+            parent_dir = os.path.dirname(driver_path_returned) 
+            # 回溯二级：移除了 chromedriver-linux64 目录（或相似目录名）
+            base_dir = os.path.dirname(parent_dir)
             
-            logger.info(f"WebDriverManager 下载目录: {driver_dir}")
+            # 3. 构造正确的最终驱动可执行文件路径
+            # 真正的驱动文件在 base_dir/chromedriver-linux64/chromedriver
+            final_driver_path = os.path.join(base_dir, 'chromedriver-linux64', 'chromedriver')
+            
             logger.info(f"尝试的最终驱动路径: {final_driver_path}")
             
-            # 3. 确保文件存在且具有执行权限
+            # 4. 确保文件存在且具有执行权限
             if not os.path.exists(final_driver_path):
-                 raise FileNotFoundError(f"未找到预期的驱动文件: {final_driver_path}")
+                 raise FileNotFoundError(f"致命错误：未找到预期的驱动文件: {final_driver_path}")
             
-            # 赋予执行权限 (rwx for owner, rx for group/others)
+            # 赋予执行权限
             os.chmod(final_driver_path, 0o755) 
 
-            # 4. 使用构造的正确路径初始化 Service
+            # 5. 使用构造的正确路径初始化 Service
             service = Service(final_driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             logger.info("Chrome 驱动启动成功。")
             
-        except WebDriverException as e:
-            logger.error(f"启动Chrome驱动失败 (WebDriverException)。请检查路径或权限: {e}")
-            raise
         except Exception as e:
             logger.error(f"驱动初始化失败: {e}")
             raise
