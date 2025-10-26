@@ -93,8 +93,11 @@ class XserverRenewal:
             
             # 确保文件存在且具有执行权限
             if not os.path.exists(final_driver_path):
-                 raise FileNotFoundError(f"致命错误：未找到预期的驱动文件: {final_driver_path}")
-            
+                 # 如果找不到，就退回到 WebDriverManager 返回的路径 (可能是新版本修复了)
+                 final_driver_path = driver_path_returned 
+                 if not os.path.exists(final_driver_path):
+                    raise FileNotFoundError(f"致命错误：未找到预期的驱动文件。")
+
             # 赋予执行权限
             os.chmod(final_driver_path, 0o755) 
 
@@ -176,7 +179,7 @@ class XserverRenewal:
                 # 必须点击这个管理链接才能进入续费页面
                 manage_link.click()
                 
-                # 💥 最终修复：强制等待 10 秒，并检查 URL 关键字，以解决 EC.url_contains 在 GH Actions 中的超时问题
+                # 强制等待 10 秒，等待页面跳转和稳定
                 logger.info("已点击管理链接，等待页面跳转和稳定 (10秒)...")
                 time.sleep(10) 
                 
@@ -193,6 +196,11 @@ class XserverRenewal:
                 if "認証エラー" in self.driver.page_source or "Error" in self.driver.page_source or "username" in self.driver.current_url:
                     raise Exception("登录失败：登录凭证/服务器标识符错误。")
                 
+                # 如果找到了主页但没有管理链接，也认为成功（可能直接在主页）
+                if "game/index" in self.driver.current_url:
+                    logger.info("登录成功，直接进入游戏面板主页，跳过管理链接点击。")
+                    return True
+
                 raise Exception(f"登录成功，但未找到预期的服务管理链接。当前URL: {current_url}")
             
         except TimeoutException:
@@ -210,48 +218,37 @@ class XserverRenewal:
         time.sleep(5) 
         
         try:
-            # 1. 查找并点击主页上的“期限延長”按钮
+            # 1. 查找并点击主页上的“期限延長”按钮 (第 1 个续期按钮)
             logger.info("查找主页上的 '期限延長' 按钮...")
             renewal_btn = self.wait_for_element_clickable(
                 By.XPATH, 
-                "//button[contains(text(), '期限延長')] | //a[contains(text(), '期限延長')]",
+                "//button[contains(text(), '期限延長')] | //a[contains(text(), '期限延長')] | //button[contains(text(), '期限を延長する')] | //a[contains(text(), '期限を延長する')]",
                 20
             )
             renewal_btn.click()
-            logger.info("已点击 '期限延長' 按钮，跳转到套餐选择页...")
-            time.sleep(5) 
+            logger.info("已点击第 1 个 '期限延長' 按钮，等待跳转到确认/套餐页...")
             
-            # 2. 处理套餐选择页 (点击 '次へ' 或 '下一步' 按钮)
-            logger.info("正在套餐选择页上查找 '下一步/选择' 按钮...")
+            # 等待 10 秒，让页面完全加载
+            time.sleep(10) 
             
-            # 寻找指向下一步的按钮（通常是蓝色或绿色），包含 '次へ', '次に進む', '選択'
-            next_btn_xpath = (
-                "//button[contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択')] | "
-                "//a[contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択')]"
+            # 2. 💥 调整逻辑：直接查找最终确认按钮（适用于免费续期的单步确认或跳过套餐选择）
+            logger.info("在跳转后的页面上，直接查找最终续期确认按钮...")
+            
+            # 最终确认按钮定位：包含 '確定', '完了', '更新', '更新する', '次へ', '選択', 'お申し込み' (选择/确认/下一步/提交)
+            final_confirm_btn_xpath = (
+                "//button[contains(text(), '確定') or contains(text(), 'Confirm') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する') or contains(text(), '次へ') or contains(text(), '選択') or contains(text(), 'お申し込み')] | "
+                "//a[contains(text(), '確定') or contains(text(), 'Confirm') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する') or contains(text(), '次へ') or contains(text(), '選択') or contains(text(), 'お申し込み')]"
             )
-            
-            next_btn = self.wait_for_element_clickable(
-                By.XPATH, 
-                next_btn_xpath,
-                20
-            )
-            next_btn.click()
-            logger.info("已点击 '下一步/选择' 按钮，跳转到最终确认页...")
-            time.sleep(5) 
-
-
-            # 3. 确认续期（最终确认页面）
             
             # 检查是否已经续期
             if "更新済み" in self.driver.page_source or "Already Renewed" in self.driver.page_source:
                 return "今日已续期"
             
-            logger.info("查找最终确认续期按钮...")
-            # 最终确认按钮定位：增加 '更新' 和 '更新する'
+            # 尝试找到最终的确认按钮
             final_confirm_btn = self.wait_for_element_clickable(
                 By.XPATH, 
-                "//button[contains(text(), '確定') or contains(text(), 'Confirm') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する')]",
-                20
+                final_confirm_btn_xpath,
+                20 # 20秒等待
             )
 
             if not final_confirm_btn.is_enabled():
@@ -261,20 +258,24 @@ class XserverRenewal:
             logger.info("已点击最终确认续期按钮。")
             time.sleep(10) 
             
-            # 4. 检查最终结果
+            # 3. 检查最终结果
             if "更新完了" in self.driver.page_source or "Renewal Complete" in self.driver.page_source or "更新されました" in self.driver.page_source:
                 return "✅ 服务续期成功！"
             else:
                 error_elements = self.driver.find_elements(By.XPATH, "//*[contains(@class, 'error') or contains(@class, 'alert-danger')]")
                 if error_elements:
-                    return f"❌ 续期失败：{error_elements[0].text[:100]}..."
+                    # 打印错误文本的前 200 个字符
+                    error_text = error_elements[0].text
+                    return f"❌ 续期失败：{error_text[:200] if len(error_text) > 200 else error_text}"
                 
                 return "❌ 续期失败：未找到明确结果，可能是页面结构改变或需要额外操作。"
 
         except TimeoutException:
-            return "❌ 续期操作超时，请手动检查服务状态。"
+            # 如果在查找最终确认按钮时超时
+            return "❌ 续期操作超时，请手动检查服务状态，可能按钮文本不是预期值。"
         except Exception as e:
             return f"❌ 续期过程中发生错误: {str(e)}"
+
     
     def run(self):
         """执行单个账号的完整续期流程"""
@@ -436,7 +437,7 @@ if __name__ == "__main__":
             else:
                 logger.info("所有账号续期完成，流程成功。")
                 
-    except ValueError as ve: # 修复了缺失的冒号
+    except ValueError as ve: 
         logger.error(f"致命配置错误: {ve}")
         exit(1)
     except Exception as e:
