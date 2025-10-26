@@ -176,7 +176,7 @@ class XserverRenewal:
                 # 必须点击这个管理链接才能进入续费页面
                 manage_link.click()
                 
-                # 💥 关键修改：应用替代修复。不依赖 EC.url_contains，改用 time.sleep()
+                # 💥 最终修复：强制等待 10 秒，并检查 URL 关键字，以解决 EC.url_contains 在 GH Actions 中的超时问题
                 logger.info("已点击管理链接，等待页面跳转和稳定 (10秒)...")
                 time.sleep(10) 
                 
@@ -185,6 +185,7 @@ class XserverRenewal:
                     logger.info(f"页面跳转稳定，当前URL: {current_url_after_click}。认为登录步骤完成。")
                     return True
                 else:
+                    # 如果等待后URL仍然不对，就抛出异常
                     raise Exception(f"点击管理链接后跳转失败或页面异常。当前URL: {current_url_after_click}")
                 
             except NoSuchElementException:
@@ -435,4 +436,9 @@ if __name__ == "__main__":
             else:
                 logger.info("所有账号续期完成，流程成功。")
                 
-    except ValueError as ve
+    except ValueError as ve: # 修复了缺失的冒号
+        logger.error(f"致命配置错误: {ve}")
+        exit(1)
+    except Exception as e:
+        logger.error(f"脚本运行时发生未捕获的全局错误: {e}")
+        exit(1)
