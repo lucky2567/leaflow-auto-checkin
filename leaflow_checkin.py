@@ -83,7 +83,8 @@ class XserverRenewal:
             
             # 兼容处理：尝试构造正确的驱动可执行文件路径
             parent_dir = os.path.dirname(driver_path_returned) 
-            base_dir = os.path.dirname(parent_path_returned)
+            # 修复了变量名拼写错误：parent_dir 代替 parent_path_returned
+            base_dir = os.path.dirname(parent_dir) 
             final_driver_path = os.path.join(base_dir, 'chromedriver-linux64', 'chromedriver')
             
             if not os.path.exists(final_driver_path):
@@ -105,6 +106,7 @@ class XserverRenewal:
             
         except Exception as e:
             logger.error(f"驱动初始化失败: {e}")
+            # 重新抛出异常，让 Manager 捕获
             raise
     
     def wait_for_element_clickable(self, by, value, timeout=20):
@@ -301,7 +303,7 @@ class XserverRenewal:
                             20 # 延长等待时间
                         )
                         
-                        # 确保元素可见，但主要依赖 JS 点击
+                        # 确保元素可用
                         if not current_btn.is_enabled():
                             # 即使找到，如果不可用，也抛出异常
                             raise Exception("找到的确认按钮不可用，流程中断。")
