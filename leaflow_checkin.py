@@ -176,12 +176,16 @@ class XserverRenewal:
                 # 必须点击这个管理链接才能进入续费页面
                 manage_link.click()
                 
-                # 接受 authority 或 manage 作为成功跳转的标志
-                WebDriverWait(self.driver, 15).until(
-                    EC.url_contains("manage") or EC.url_contains("authority")
-                )
-                logger.info("已成功跳转到服务管理页面（或权限页面）。")
-                return True
+                # 💥 关键修改：应用替代修复。不依赖 EC.url_contains，改用 time.sleep()
+                logger.info("已点击管理链接，等待页面跳转和稳定 (10秒)...")
+                time.sleep(10) 
+                
+                current_url_after_click = self.driver.current_url
+                if "authority" in current_url_after_click or "index" in current_url_after_click:
+                    logger.info(f"页面跳转稳定，当前URL: {current_url_after_click}。认为登录步骤完成。")
+                    return True
+                else:
+                    raise Exception(f"点击管理链接后跳转失败或页面异常。当前URL: {current_url_after_click}")
                 
             except NoSuchElementException:
                 # 如果找不到管理链接，则检查是否停留在错误页面
@@ -242,7 +246,7 @@ class XserverRenewal:
                 return "今日已续期"
             
             logger.info("查找最终确认续期按钮...")
-            # 💥 最终确认按钮定位：增加 '更新' 和 '更新する'
+            # 最终确认按钮定位：增加 '更新' 和 '更新する'
             final_confirm_btn = self.wait_for_element_clickable(
                 By.XPATH, 
                 "//button[contains(text(), '確定') or contains(text(), 'Confirm') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する')]",
@@ -431,9 +435,4 @@ if __name__ == "__main__":
             else:
                 logger.info("所有账号续期完成，流程成功。")
                 
-    except ValueError as ve:
-        logger.error(f"致命配置错误: {ve}")
-        exit(1)
-    except Exception as e:
-        logger.error(f"脚本运行时发生未捕获的全局错误: {e}")
-        exit(1)
+    except ValueError as ve
