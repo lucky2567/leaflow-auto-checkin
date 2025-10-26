@@ -24,7 +24,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, ElementClickInterceptedException
 import requests
 from datetime import datetime
 import os.path
@@ -192,7 +192,7 @@ class XserverRenewal:
                     raise Exception("登录失败：登录凭证/服务器标识符错误。")
                 
                 # 如果找到了主页但没有管理链接，也认为成功（可能直接在主页）
-                if "game/index" in self.driver.current_url:
+                if "game/index" in self.driver.current_source:
                     logger.info("登录成功，直接进入游戏面板主页，跳过管理链接点击。")
                     return True
 
@@ -227,7 +227,13 @@ class XserverRenewal:
                 entry_btn_xpath,
                 20
             )
-            entry_btn.click()
+            # 使用 JS 强制点击入口按钮，以防主页有悬浮物遮挡
+            try:
+                entry_btn.click()
+            except ElementClickInterceptedException:
+                self.driver.execute_script("arguments[0].click();", entry_btn)
+                logger.warning("入口按钮被拦截，已强制使用 JS 点击。")
+                
             logger.info("已点击续期入口按钮，等待跳转到确认/套餐页面...")
             
             # 等待 10 秒，让页面完全加载
@@ -240,7 +246,6 @@ class XserverRenewal:
                 return "今日已续期"
             
             # 最终执行按钮/中间确认按钮 - 包含所有可能性
-            # 优先级：执行手续 > 进入确认画面 > 通用确认 (确定/下一步)
             confirm_execute_btn_xpath = (
                 "//button[contains(text(), '延長手続きを行う') or contains(text(), '確認画面に進む') or contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択') or contains(text(), '確定') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する')] | "
                 "//a[contains(text(), '延長手続きを行う') or contains(text(), '確認画面に進む') or contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択') or contains(text(), '確定') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する')]"
@@ -260,12 +265,22 @@ class XserverRenewal:
                     )
                     
                     if not current_btn.is_enabled():
-                         # 如果按钮找到了但是不可用，流程可能中断，退出循环
                          raise Exception("找到的确认按钮不可用，流程中断。")
 
-                    current_btn.click()
+                    # **解决点击被拦截的问题：优先常规点击，失败则使用 JS 强制点击**
+                    try:
+                        current_btn.click()
+                        logger.info(f"使用常规点击成功。按钮文本: {current_btn.text}")
+                    except ElementClickInterceptedException:
+                        self.driver.execute_script("arguments[0].click();", current_btn)
+                        logger.warning(f"点击被拦截，已强制使用 JS 点击。按钮文本: {current_btn.text}")
+                    except WebDriverException as e:
+                        # 捕获其他WebDriverException，尝试 JS 强制点击
+                        self.driver.execute_script("arguments[0].click();", current_btn)
+                        logger.warning(f"常规点击失败 ({str(e)}), 尝试强制 JS 点击。按钮文本: {current_btn.text}")
+                        
                     final_click_count += 1
-                    logger.info(f"✅ 第 {final_click_count} 次点击成功。按钮文本包含: {current_btn.text}")
+                    logger.info(f"✅ 第 {final_click_count} 次点击完成。")
                     
                     # 每次点击后等待页面加载
                     time.sleep(5) 
@@ -278,8 +293,10 @@ class XserverRenewal:
                     else:
                         # 如果第一次点击就超时，抛出异常
                         raise TimeoutException("续期执行/确认按钮未找到或加载失败。")
-                
-            
+                except Exception as e:
+                     raise Exception(f"在第 {final_click_count + 1} 步点击时发生错误: {str(e)}")
+
+
             # 3. 检查最终结果 (统一在最后检查)
             logger.info("所有点击步骤完成，检查最终续期结果...")
             
@@ -319,6 +336,7 @@ class XserverRenewal:
                 success = "✅" in result or "已续期" in result
                 return success, result, info_summary
             else:
+                # 登录失败会在 login() 内部抛出异常
                 pass 
                 
         except Exception as e:
