@@ -1,21 +1,49 @@
+name: Xserver Auto Renewal
+
+on:
+  schedule:
+    # 每天UTC时间01:00运行（北京时间09:00）
+    - cron: '0 1 * * *'
+  # 允许手动触发
+  workflow_dispatch:
+
 jobs:
   checkin:
     runs-on: ubuntu-latest
     
     steps:
-    # ... (前面的步骤保持不变)
-
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # 假设 requirements.txt 中包含了 selenium, requests, etc.
+        pip install -r requirements.txt
+        
+    - name: Install Chrome
+      run: |
+        sudo apt-get update
+        # 确保安装了 Google Chrome 稳定版
+        sudo apt-get install -y google-chrome-stable
+        
     - name: Run Xserver Renewal Script 🛠️
-      # =========================================================
-      # 💥 关键修改：更换为 Xserver 脚本所需的环境变量
-      # =========================================================
       env:
+        # =========================================================
+        # 💥 关键修改：添加 XSERVER_SERVER_ID 环境变量
+        # =========================================================
+        
         # Xserver 单账号登录凭证 (必填)
         XSERVER_USERNAME: ${{ secrets.XSERVER_USERNAME }}
         XSERVER_PASSWORD: ${{ secrets.XSERVER_PASSWORD }}
         
-        # 💥 新增的关键变量: 服务器标识符/客户ID
-        XSERVER_SERVER_ID: ${{ secrets.XSERVER_SERVER_ID }}  # <--- 新增此行
+        # 💥 必须添加此项，否则 Python 脚本会因缺少凭证而失败
+        XSERVER_SERVER_ID: ${{ secrets.XSERVER_SERVER_ID }}
         
         # Xserver 多账号列表 (可选, 优先级低于单账号)
         XSERVER_ACCOUNTS: ${{ secrets.XSERVER_ACCOUNTS }}
@@ -25,8 +53,8 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         
         # 标志当前运行环境为 GitHub Actions (由脚本读取)
-        GITHUB_ACTIONS: true
+        CHROME_HEADLESS: true # 明确设置无头模式
         
       run: |
-        # 💥 关键修改：运行 XserverRenewal.py 脚本文件
+        # 💥 运行脚本文件
         python leaflow_checkin.py
