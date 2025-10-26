@@ -24,7 +24,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, ElementClickInterceptedException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, ElementClickInterceptedException, StaleElementReferenceException
 import requests
 from datetime import datetime
 import os.path
@@ -192,7 +192,7 @@ class XserverRenewal:
                     raise Exception("登录失败：登录凭证/服务器标识符错误。")
                 
                 # 如果找到了主页但没有管理链接，也认为成功（可能直接在主页）
-                if "game/index" in self.driver.current_source:
+                if "game/index" in self.driver.current_url:
                     logger.info("登录成功，直接进入游戏面板主页，跳过管理链接点击。")
                     return True
 
@@ -205,6 +205,18 @@ class XserverRenewal:
         except Exception as e:
             raise Exception(f"登录失败: {str(e)}")
 
+
+    def _check_final_result(self, final_click_count):
+        """内部方法：检查最终页面的续期结果"""
+        if "更新完了" in self.driver.page_source or "Renewal Complete" in self.driver.page_source or "更新されました" in self.driver.page_source:
+            return "✅ 服务续期成功！"
+        else:
+            error_elements = self.driver.find_elements(By.XPATH, "//*[contains(@class, 'error') or contains(@class, 'alert-danger')]")
+            if error_elements:
+                error_text = error_elements[0].text
+                return f"❌ 续期失败：{error_text[:200] if len(error_text) > 200 else error_text}"
+            
+            return f"❌ 续期失败：未找到明确结果，共点击 {final_click_count} 次。请手动检查页面。"
 
     def renew_service(self):
         """执行多步骤续期操作：1. 点击入口按钮 -> 2. 循环点击确认/执行按钮"""
@@ -236,8 +248,8 @@ class XserverRenewal:
                 
             logger.info("已点击续期入口按钮，等待跳转到确认/套餐页面...")
             
-            # 等待 10 秒，让页面完全加载
-            time.sleep(10) 
+            # 增加等待时间，确保跳转和DOM稳定
+            time.sleep(12) 
             
             # 2. 循环点击确认/执行按钮 (Step 2/3/...)
             
@@ -254,20 +266,45 @@ class XserverRenewal:
             logger.info("在跳转后的页面上，循环查找执行或进入下一确认步骤的按钮...")
             
             final_click_count = 0
-            max_clicks = 3  # 最多尝试点击三次（覆盖最复杂的四步流程）
+            max_clicks = 3  # 最多尝试点击三次
             
             for i in range(max_clicks):
+                current_btn = None
+                
+                # **Stale Element 重试逻辑 (最多 3 次尝试)**
+                for attempt in range(3):
+                    try:
+                        # 每次循环都重新定位元素
+                        current_btn = self.wait_for_element_clickable(
+                            By.XPATH, 
+                            confirm_execute_btn_xpath,
+                            10 # 每次尝试等待 10 秒
+                        )
+                        break # 定位成功，跳出重试循环
+                    except Exception as e:
+                        if "stale element" in str(e).lower() and attempt < 2:
+                             logger.warning(f"检测到 Stale Element 错误，尝试重新定位... (第 {attempt + 1} 次)")
+                             time.sleep(2) # 短暂等待 DOM 稳定
+                             continue
+                        else:
+                            # 最终定位失败或不是 Stale 错误，如果之前有点击成功，则退出主循环
+                            if final_click_count > 0:
+                                logger.info(f"第 {i + 1} 次定位失败，但之前已点击 {final_click_count} 次，假定流程结束。")
+                                return self._check_final_result(final_click_count)
+                            else:
+                                # 第一次定位就失败，抛出异常
+                                raise TimeoutException("续期执行/确认按钮首次定位失败。")
+
+                if current_btn is None:
+                    # 只有在定位失败且没有抛出异常时才会发生，此时应检查结果
+                    break
+                
+                # **执行点击**
                 try:
-                    current_btn = self.wait_for_element_clickable(
-                        By.XPATH, 
-                        confirm_execute_btn_xpath,
-                        10 # 每次尝试等待 10 秒
-                    )
-                    
                     if not current_btn.is_enabled():
                          raise Exception("找到的确认按钮不可用，流程中断。")
 
-                    # **解决点击被拦截的问题：优先常规点击，失败则使用 JS 强制点击**
+                    # 解决点击被拦截的问题：优先常规点击，失败则使用 JS 强制点击
                     try:
                         current_btn.click()
                         logger.info(f"使用常规点击成功。按钮文本: {current_btn.text}")
@@ -275,40 +312,22 @@ class XserverRenewal:
                         self.driver.execute_script("arguments[0].click();", current_btn)
                         logger.warning(f"点击被拦截，已强制使用 JS 点击。按钮文本: {current_btn.text}")
                     except WebDriverException as e:
-                        # 捕获其他WebDriverException，尝试 JS 强制点击
+                        # 捕获其他 WebDriverException，尝试 JS 强制点击
                         self.driver.execute_script("arguments[0].click();", current_btn)
                         logger.warning(f"常规点击失败 ({str(e)}), 尝试强制 JS 点击。按钮文本: {current_btn.text}")
                         
                     final_click_count += 1
                     logger.info(f"✅ 第 {final_click_count} 次点击完成。")
                     
-                    # 每次点击后等待页面加载
-                    time.sleep(5) 
+                    # 每次点击后增加等待时间
+                    time.sleep(8) 
                     
-                except TimeoutException:
-                    if final_click_count > 0:
-                        # 如果已经点击过至少一次，但本次超时，假设流程结束或到达最终状态
-                        logger.info(f"第 {final_click_count + 1} 次点击超时，假定已完成或到达最终页。")
-                        break 
-                    else:
-                        # 如果第一次点击就超时，抛出异常
-                        raise TimeoutException("续期执行/确认按钮未找到或加载失败。")
                 except Exception as e:
-                     raise Exception(f"在第 {final_click_count + 1} 步点击时发生错误: {str(e)}")
-
-
-            # 3. 检查最终结果 (统一在最后检查)
-            logger.info("所有点击步骤完成，检查最终续期结果...")
+                     # 捕获点击时发生的其他错误 (如按钮不可用)
+                     return f"❌ 续期过程中断：在第 {final_click_count + 1} 步点击时发生错误: {str(e)}"
             
-            if "更新完了" in self.driver.page_source or "Renewal Complete" in self.driver.page_source or "更新されました" in self.driver.page_source:
-                return "✅ 服务续期成功！"
-            else:
-                error_elements = self.driver.find_elements(By.XPATH, "//*[contains(@class, 'error') or contains(@class, 'alert-danger')]")
-                if error_elements:
-                    error_text = error_elements[0].text
-                    return f"❌ 续期失败：{error_text[:200] if len(error_text) > 200 else error_text}"
-                
-                return f"❌ 续期失败：未找到明确结果，共点击 {final_click_count} 次。请手动检查页面。"
+            # 3. 检查最终结果
+            return self._check_final_result(final_click_count)
 
         except TimeoutException as te:
             # 如果在任何一个步骤中超时
