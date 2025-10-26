@@ -29,7 +29,7 @@ import requests
 from datetime import datetime
 import os.path
 
-# 💥 导入 webdriver-manager 相关的库
+# 导入 webdriver-manager 相关的库
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
@@ -47,7 +47,7 @@ class XserverRenewal:
         self.username = username
         self.password = password
         
-        # 关键更新: 从环境变量读取服务器标识符
+        # 从环境变量读取服务器标识符
         self.server_id = os.getenv('XSERVER_SERVER_ID', '').strip()
         
         # 验证所有必要凭证
@@ -58,7 +58,7 @@ class XserverRenewal:
         self.setup_driver()
     
     def setup_driver(self):
-        """设置Chrome驱动选项并自动管理ChromeDriver (已修复 Exec format error)"""
+        """设置Chrome驱动选项并自动管理ChromeDriver"""
         chrome_options = Options()
         
         # GitHub Actions环境配置 (无头模式)
@@ -75,31 +75,30 @@ class XserverRenewal:
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
-            # 💥 最终修复: 解决 webdriver-manager 返回错误路径的问题 (手动回溯路径到可执行文件)
+            # 解决 webdriver-manager 返回错误路径的问题 (手动回溯路径到可执行文件)
             logger.info("正在自动下载并配置 ChromeDriver...")
             
-            # 1. 使用 ChromeDriverManager().install() 获取路径
             driver_path_returned = ChromeDriverManager().install()
             
             logger.info(f"WebDriverManager 返回的路径: {driver_path_returned}")
             
-            # 2. 通过 os.path.dirname() 回溯，找到真正的驱动目录
+            # 通过 os.path.dirname() 回溯，找到真正的驱动目录
             parent_dir = os.path.dirname(driver_path_returned) 
             base_dir = os.path.dirname(parent_dir)
             
-            # 3. 构造正确的最终驱动可执行文件路径
+            # 构造正确的最终驱动可执行文件路径
             final_driver_path = os.path.join(base_dir, 'chromedriver-linux64', 'chromedriver')
             
             logger.info(f"尝试的最终驱动路径: {final_driver_path}")
             
-            # 4. 确保文件存在且具有执行权限
+            # 确保文件存在且具有执行权限
             if not os.path.exists(final_driver_path):
                  raise FileNotFoundError(f"致命错误：未找到预期的驱动文件: {final_driver_path}")
             
             # 赋予执行权限
             os.chmod(final_driver_path, 0o755) 
 
-            # 5. 使用构造的正确路径初始化 Service
+            # 使用构造的正确路径初始化 Service
             service = Service(final_driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -121,9 +120,8 @@ class XserverRenewal:
             EC.presence_of_element_located((by, value))
         )
     
-    # 💥 关键修改 3: 修正登录成功后的页面跳转逻辑
     def login(self):
-        """执行 Xserver 登录流程"""
+        """执行 Xserver 登录流程 (包含中间页处理)"""
         logger.info(f"开始登录 Xserver 面板")
         
         LOGIN_URL = "https://secure.xserver.ne.jp/xapanel/login/xmgame/game"
@@ -158,11 +156,11 @@ class XserverRenewal:
             login_btn.click()
             logger.info("已点击登录按钮")
             
-            # 等待跳转到任何新页面，且不再停留在要求输入 username 的登录页
+            # 等待跳转到任何新页面
             WebDriverWait(self.driver, 20).until(
                 lambda driver: "username" not in driver.current_url
             )
-            time.sleep(5) # 额外等待页面内容加载
+            time.sleep(5) 
 
             current_url = self.driver.current_url
             
@@ -178,8 +176,7 @@ class XserverRenewal:
                 # 必须点击这个管理链接才能进入续费页面
                 manage_link.click()
                 
-                # 💥 关键修改: 接受新的URL路径 authority 或 manage
-                # 再次等待，确保跳转到真正的服务管理页面
+                # 接受 authority 或 manage 作为成功跳转的标志
                 WebDriverWait(self.driver, 15).until(
                     EC.url_contains("manage") or EC.url_contains("authority")
                 )
@@ -191,53 +188,69 @@ class XserverRenewal:
                 if "認証エラー" in self.driver.page_source or "Error" in self.driver.page_source or "username" in self.driver.current_url:
                     raise Exception("登录失败：登录凭证/服务器标识符错误。")
                 
-                # 如果既不是错误页面，又没有管理链接，可能是页面结构大变
                 raise Exception(f"登录成功，但未找到预期的服务管理链接。当前URL: {current_url}")
             
         except TimeoutException:
             raise Exception(f"登录页面元素加载超时或登录后未跳转。当前URL: {self.driver.current_url}")
         except NoSuchElementException:
-            # 这通常意味着登录页面元素的定位器失效，但不应在登录后发生
             raise Exception("登录页面元素定位失败，请检查选择器。")
         except Exception as e:
             raise Exception(f"登录失败: {str(e)}")
 
 
     def renew_service(self):
-        """执行续期操作"""
-        RENEWAL_PAGE_URL = "https://secure.xserver.ne.jp/xapanel/manage/xmgame/game"
+        """执行多步骤续期操作"""
         
-        # 💥 关键修改: 强制导航到续费页面，确保从 authority 页面正确进入
-        self.driver.get(RENEWAL_PAGE_URL) 
-        
-        logger.info("已导航到服务管理页，等待加载...")
-        time.sleep(5)  # 给予页面充分加载时间
+        logger.info("已位于游戏面板首页，开始查找 '期限延長' 按钮...")
+        time.sleep(5) 
         
         try:
-            # 2. 查找并点击“延长/更新”按钮
-            logger.info("查找服务列表中的 '升级/延长' 或 '更新' 按钮...")
+            # 1. 查找并点击主页上的“期限延長”按钮
+            logger.info("查找主页上的 '期限延長' 按钮...")
             renewal_btn = self.wait_for_element_clickable(
                 By.XPATH, 
-                "//button[contains(text(), '延長') or contains(text(), '更新') or contains(text(), 'Upgrade') or contains(text(), 'Renew')] | //a[contains(text(), '延長') or contains(text(), '更新') or contains(text(), 'Upgrade') or contains(text(), 'Renew')]",
+                "//button[contains(text(), '期限延長')] | //a[contains(text(), '期限延長')]",
                 20
             )
             renewal_btn.click()
-            logger.info("已点击续期/延长操作按钮，跳转到确认页...")
+            logger.info("已点击 '期限延長' 按钮，跳转到套餐选择页...")
             time.sleep(5) 
             
-            # 3. 确认续期
+            # 2. 处理套餐选择页 (点击 '次へ' 或 '下一步' 按钮)
+            logger.info("正在套餐选择页上查找 '下一步/选择' 按钮...")
+            
+            # 寻找指向下一步的按钮（通常是蓝色或绿色），包含 '次へ', '次に進む', '選択'
+            next_btn_xpath = (
+                "//button[contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択')] | "
+                "//a[contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択')]"
+            )
+            
+            next_btn = self.wait_for_element_clickable(
+                By.XPATH, 
+                next_btn_xpath,
+                20
+            )
+            next_btn.click()
+            logger.info("已点击 '下一步/选择' 按钮，跳转到最终确认页...")
+            time.sleep(5) 
+
+
+            # 3. 确认续期（最终确认页面）
+            
+            # 检查是否已经续期
             if "更新済み" in self.driver.page_source or "Already Renewed" in self.driver.page_source:
                 return "今日已续期"
             
             logger.info("查找最终确认续期按钮...")
+            # 💥 最终确认按钮定位：增加 '更新' 和 '更新する'
             final_confirm_btn = self.wait_for_element_clickable(
                 By.XPATH, 
-                "//button[contains(text(), '確定') or contains(text(), 'Confirm') or contains(text(), '完了')]",
+                "//button[contains(text(), '確定') or contains(text(), 'Confirm') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する')]",
                 20
             )
 
             if not final_confirm_btn.is_enabled():
-                raise Exception("续期确认按钮不可用，可能需要手动选择支付方式或其他操作。")
+                raise Exception("续期确认按钮不可用，可能需要手动介入。")
 
             final_confirm_btn.click()
             logger.info("已点击最终确认续期按钮。")
@@ -250,9 +263,6 @@ class XserverRenewal:
                 error_elements = self.driver.find_elements(By.XPATH, "//*[contains(@class, 'error') or contains(@class, 'alert-danger')]")
                 if error_elements:
                     return f"❌ 续期失败：{error_elements[0].text[:100]}..."
-                
-                if "manage" in self.driver.current_url:
-                    return "⚠️ 续期操作完成，但未找到明确成功消息，请手动检查！"
                 
                 return "❌ 续期失败：未找到明确结果，可能是页面结构改变或需要额外操作。"
 
