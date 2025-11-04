@@ -10,9 +10,6 @@ Xserver 游戏面板自动续期脚本 (优化版)
 5. 添加详细的调试日志和截图功能
 """
 
-import os日志和截图功能
-"""
-
 import os
 import time
 import logging
@@ -25,7 +22,6 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 import requests
 from datetime import datetime
 import os.path
-import base64
 
 # 导入 webdriver-manager 相关的库
 from selenium.webdriver.chrome.service import Service
@@ -100,13 +96,13 @@ class XserverRenewal:
             return None
     
     def wait_for_element_clickable(self, by, value, timeout=30):
-        """增强版等待元素可点击"""
+        """等待元素可点击"""
         return WebDriverWait(self.driver, timeout).until(
             EC.element_to_be_clickable((by, value))
         )
     
     def wait_for_element_present(self, by, value, timeout=30):
-        """增强版等待元素出现"""
+        """等待元素出现"""
         return WebDriverWait(self.driver, timeout).until(
             EC.presence_of_element_located((by, value))
         )
@@ -116,13 +112,13 @@ class XserverRenewal:
         try:
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
             self.driver.execute_script("arguments[0].click();", element)
-            logger.info(f"✅ 成功点击元素: {description}")
+            logger.info(f"成功点击元素: {description}")
             return True
         except ElementClickInterceptedException:
             try:
                 self.driver.execute_script("window.scrollTo(0, 0);")
                 self.driver.execute_script("arguments[0].click();", element)
-                logger.info(f"✅ 通过滚动修复后点击成功: {description}")
+                logger.info(f"通过滚动修复后点击成功: {description}")
                 return True
             except Exception as e:
                 logger.warning(f"点击元素失败: {description} - {str(e)}")
@@ -160,7 +156,7 @@ class XserverRenewal:
             logger.info("密码输入完成")
             
             # 4. 登录按钮
-            login_btn = self.wait_for_element_clickable(By.NAME, "b1able(By.NAME, "b1", 10)
+            login_btn = self.wait_for_element_clickable(By.NAME, "b1", 10)
             if not self.safe_click(login_btn, "登录按钮"):
                 raise Exception("无法点击登录按钮")
             
@@ -371,5 +367,5 @@ if __name__ == "__main__":
             exit(1)
         logger.info("所有账号处理完成")
     except Exception as e:
-        logger.error(f"脚本运行失败: logger.error(f"脚本运行失败: {e}")
+        logger.error(f"脚本运行失败: {e}")
         exit(1)
