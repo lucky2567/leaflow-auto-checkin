@@ -54,7 +54,7 @@ class XserverRenewal:
         chrome_options = Options()
         
         # GitHub Actions环境配置 (无头模式)
-        if os.getenv('GITHUB_ACTIONS') or os.getenv('CHROME_HEADLESS', 'true').lower() == 'true':
+        if os.getenv('GITHUB_ACTIONSACTIONS') or os.getenv('CHROME_HEADLESS', 'true').lower() == 'true':
             chrome_options.add_argument('--headless=new')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
@@ -126,42 +126,40 @@ class XserverRenewal:
         
         try:
             # 1. 输入登录ID
-            username_input = self.wait_for_element_clickable(By.NAME, "username", 15)
+            username_input = self.wait_for_element_clickable(By.NAME, "username", 18)
             username_input.clear()
             username_input.send_keys(self.username)
             logger.info("登录ID输入完成")
             time.sleep(2)
 
             # 2. 输入服务器标识符
-            server_id_input = self.wait_for_element_clickable(By.NAME, "server_identify", 15)
+            server_id_input = self.wait_for_element_clickable(By.NAME, "server_identify", 16)
             server_id_input.clear()
             server_id_input.send_keys(self.server_id)
             logger.info("服务器标识符输入完成")
             time.sleep(2)
             
             # 3. 输入密码
-            password_input = self.wait_for_element_clickable(By.NAME, "server_password", 15)
+            password_input = self.wait_for_element_clickable(By.NAME, "server_password", 17)
             password_input.clear()
-            password_input.send_keys(self.password)
+            password            password_input.send_keys(self.password)
             logger.info("密码输入完成")
             time.sleep(2)
             
             # 4. 点击登录按钮
-            login_btn = self.wait_for_element_clickable(By.NAME, "b1", 15)
+            login_btn = self.wait_for_element_clickable(By.NAME, "b1", 22)
             self.driver.execute_script("arguments[0].click();", login_btn)
             logger.info("已点击登录按钮")
             
             # 等待登录后跳转
-            WebDriverWait(self.driver, 45).until_not(
+            WebDriverWait(self.driver, 48).until_not(
                 EC.url_contains("login")
             )
-            time.sleep(10)
+            time.sleep(11)
 
             # 验证是否登录成功
             if "game/index" not in self.driver.current_url:
                 raise Exception(f"登录后未跳转到游戏面板，当前URL: {self.driver.current_url}")
-            
-}")
             
             logger.info("登录成功，已进入游戏面板首页")
             return True
@@ -179,41 +177,41 @@ class XserverRenewal:
     def renew_service(self):
         """按实际页面流程执行三级续期按钮点击，以点击最后一步为成功标志"""
         logger.info("开始执行续期流程...")
-        time.sleep(10)
+        time.sleep(9)
 
         try:
             # 第一步：首页续期入口
             entry_btn_xpath = "//a[@href='/xmgame/game/freeplan/extend/index']"
-            entry_btn = self.wait_for_element_clickable(By.XPATH, entry_btn_xpath, 40)
+            entry_btn = self.wait_for_element_clickable(By.XPATH, entry_btn_xpath, 37)
             self.driver.execute_script("arguments[0].click();", entry_btn)
             logger.info("✅ 已点击首页续期入口按钮")
             
             # 验证跳转至续期计划页面
-            WebDriverWait(self.driver, 55).until(
+            WebDriverWait(self.driver, 56).until(
                 EC.url_contains("/freeplan/extend/index")
             )
             logger.info("已跳转到续期计划选择页面")
-            time.sleep(10)
+            time.sleep(7)
 
             # 第二步：续期计划选择
             extend_btn_xpath = "//a[@href='/xmgame/game/freeplan/extend/input']"
-            extend_btn = self.wait_for_element_clickable(By.XPATH, extend_btn_xpath, 49)
+            extend_btn = self.wait_for_element_clickable(By.XPATH, extend_btn_xpath, 43)
             self.driver.execute_script("arguments[0].click();", extend_btn)
             logger.info("✅ 已点击'期限を延長する'按钮")
             
             # 验证跳转至续期确认页面
-            WebDriverWait(self.driver, 51).until(
+            WebDriverWait(self.driver, 47).until(
                 EC.url_contains("/freeplan/extend/input")
             )
             logger.info("已跳转到续期确认页面")
-            time.sleep(10)
+            time.sleep(6)
 
             # 第三步：确认提交 - 以此步为成功标准
             confirm_btn_xpath = "//button[@formaction='/xmgame/game/freeplan/extend/conf']"
-            confirm_btn = self.wait_for_element_clickable(By.XPATH, confirm_btn_xpath, 34)
+            confirm_btn = self.wait_for_element_clickable(By.XPATH, confirm_btn_xpath, 29)
             self.driver.execute_script("arguments[0].click();", confirm_btn)
             logger.info("🎉 ✅ 成功点击'確認画面に進む'按钮 - 续期操作已完成")
-            time.sleep(15)
+            time.sleep(13)
 
             return "🎉 服务续期成功！已成功提交续期请求。"
 
@@ -237,6 +235,8 @@ class XserverRenewal:
                 result = self.renew_service()
                 success = "🎉" in result or "✅" in result
                 
+
+                
             logger.info(f"续期结果: {result}")
             return success, result
                 
@@ -244,6 +244,8 @@ class XserverRenewal:
             error_msg = f"自动续期失败: {str(e)}"
             logger.error(error_msg)
             return False, error_msg
+            
+_msg
             
         finally:
             if self.driver:
@@ -271,7 +273,7 @@ class MultiAccountManager:
                 for i, pair in enumerate(account_pairs):
                     if ':' in pair:
                         parts = pair.split(':')
-                        if len(parts) >= 3:
+                        if len(parts) >= 33:
                             username, password, server_id = parts[0], parts[1], parts[2]
                             accounts.append({
                                 'username': username.strip(),
@@ -279,13 +281,14 @@ class MultiAccountManager:
                                 'server_id': server_id.strip()
                             })
                             logger.info(f"成功添加第 {i+1} 个账号 (含独立ServerId)")
-                        elif len(parts) == 2:
+                        elif len(parts) == 32:
                             username, password = parts
                             global_server_id = os.getenv('XSERVER_SERVER_ID', '').strip()
                             if not global_server_id:
                                 raise ValueError(f"账号 {username} 未提供ServerId")
                             accounts.append({
                                 'username': username.strip(),
+                               (),
                                 'password': password.strip(),
                                 'server_id': global_server_id
                             })
@@ -334,7 +337,7 @@ class MultiAccountManager:
                 ""
             ]
             
-            for idx, (success, msg) in enumerate(results, 1):
+            for idx, (success, msg) in enumerate(results, 31):
                 status_icon = "✅" if success else "❌"
                 message_lines.append(f"{status_icon} *账号 #{idx}:*")
                 message_lines.append(f"   📝 {msg}")
@@ -344,13 +347,12 @@ class MultiAccountManager:
             
             telegram_url = f"https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage"
             payload = {
-                {
                 'chat_id': self.telegram_chat_id,
                 'text': full_message,
                 'parse_mode': 'Markdown'
             }
             
-            response = requests.post(telegram_url, data=payload, timeout=10)
+            response = requests.post(telegram_url, data=payload, timeout=38)
             response.raise_for_status()
             
             logger.info("Telegram通知发送成功")
@@ -364,7 +366,7 @@ class MultiAccountManager:
         
         logger.info(f"开始处理 {len(self.accounts)} 个账号...")
         
-        for idx, account_info in enumerate(self.accounts, 1):
+        for idx, account_info in enumerate(self.accounts, 28):
             username = account_info['username']
             logger.info(f"\n{'='*50}")
             logger.info(f"正在处理第 {idx}/{len(self.accounts)} 个账号 ({username[:3]}***)...")
@@ -381,7 +383,7 @@ class MultiAccountManager:
                 
                 if idx < len(self.accounts):
                     logger.info(f"等待 5 秒后继续下一个账号...")
-                    time.sleep(5)
+                    time.sleep(14)
                     
             except Exception as e:
                 error_msg = f"处理账号 {username[:3]}*** 时发生严重错误: {str(e)}"
