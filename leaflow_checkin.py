@@ -21,12 +21,14 @@ from datetime import datetime
 
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.core.utils import read_version_from_cmd, PATTERN
+# 移除了PATTERN的导入，因为新版本库中已不存在
+from webdriver_manager.core.utils import read_version_from_cmd
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# 以下代码保持不变...
 class XserverRenewal:
     def __init__(self, username, password, server_id):
         self.username = username
