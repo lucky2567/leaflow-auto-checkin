@@ -176,72 +176,137 @@ class XserverRenewal:
         
         return f"❌ 续期失败：未找到明确结果。当前URL: {current_url}"
 
-    def renew_service(self):
-        """执行续期操作（针对确认按钮优化）"""
-        logger.info("开始续期流程...")
-        time.sleep(5)
+def renew_service(self):
+        """执行多步骤续期操作: 1. 点击入口按钮 -> 2. 循环点击确认/执行按钮"""
+        
+        logger.info("已位于游戏面板首页，开始查找续期入口按钮...")
+        time.sleep(5) 
         
         try:
-            # 1. 查找并点击续期入口按钮
-            entry_btn_selectors = [
-                "//a[contains(@href, 'extend')]",
-                "//button[contains(., '延長')]",
-                "//a[contains(., '延長')]"
-            ]
+            # 1. 查找并点击主页上的入口按钮 (Step 1: Go to renewal page)
+            logger.info("查找主页上引导进入续期流程的入口按钮...")
             
-            entry_btn = None
-            for selector in entry_btn_selectors:
-                try:
-                    entry_btn = self.wait_for_element_clickable(By.XPATH, selector, 10)
-                    break
-                except TimeoutException:
-                    continue
-                    
-            if not entry_btn:
-                raise NoSuchElementException("无法定位续期入口按钮")
-                
-            self.driver.execute_script("arguments[0].click();", entry_btn)
-            logger.info("已点击续期入口按钮")
-            
-            # 2. 等待进入续期页面
-            WebDriverWait(self.driver, 20).until(
-                lambda d: "extend" in d.current_url.lower()
+            entry_btn_xpath = "//a[@href='/xmgame/game/freeplan/extend/input']"
+            backup_entry_btn_xpath = (
+                "//button[contains(text(), '期限延長') or contains(text(), '期限を延長する') or contains(text(), '期限を延長していただく必要がございます') or contains(text(), 'アップグレード・期限延長')] | "
+                "//a[contains(text(), '期限延長') or contains(text(), '期限を延長する') or contains(text(), '期限を延長していただく必要がございます') or contains(text(), 'アップグレード・期限延長')]"
             )
-            logger.info(f"已进入续期页面: {self.driver.current_url}")
-            self._save_screenshot("renewal_page")
             
-            # 3. 直接定位并点击确认按钮（核心修改）
-            confirm_btn_selectors = [
-                "//button[contains(., '確認画面に進む')]",  # 精确匹配确认按钮
-                "//button[contains(., '確認')]",  # 模糊匹配确认按钮
-                "//a[contains(., '確認')]"  # 链接形式的确认按钮
-            ]
-            
-            confirm_btn = None
-            for selector in confirm_btn_selectors:
-                try:
-                    confirm_btn = self.wait_for_element_clickable(By.XPATH, selector, 15)
-                    break
-                except TimeoutException:
-                    continue
-                    
-            if not confirm_btn:
-                raise NoSuchElementException("无法定位确认按钮")
+            try:
+                entry_btn = self.wait_for_element_clickable(
+                    By.XPATH, 
+                    entry_btn_xpath,
+                    15 # 首次尝试使用精确的 XPath
+                )
+            except TimeoutException:
+                logger.warning("精确的续期入口按钮定位失败，尝试使用模糊 XPath...")
+                entry_btn = self.wait_for_element_clickable(
+                    By.XPATH, 
+                    backup_entry_btn_xpath,
+                    15
+                )
+
+            try:
+                self.driver.execute_script("arguments[0].click();", entry_btn)
+                logger.info("已点击续期入口按钮，使用 JS 强制点击。")
+            except Exception:
+                entry_btn.click() 
+                logger.warning("入口按钮 JS 强制点击失败，尝试标准点击。")
                 
-            # 确保按钮可见并点击
-            self.driver.execute_script("arguments[0].scrollIntoView();", confirm_btn)
-            self.driver.execute_script("arguments[0].click();", confirm_btn)
-            logger.info("✅ 已点击确认按钮")
+            logger.info("已点击续期入口按钮，等待跳转到确认/套餐页面...")
             
-            # 4. 检查结果
-            time.sleep(5)  # 等待页面跳转
-            return self._check_final_result()
+            # [修复 1] 移除 time.sleep(15) 和单独的复选框逻辑。
+            # 让主循环来处理加载和点击。
+
+            # 2. 循环点击确认/执行按钮 (Step 2/3/...)
+            
+            # [修复 2] 增加一个短暂的 sleep 确保页面开始加载
+            time.sleep(2) 
+            try:
+                if "更新済み" in self.driver.page_source or "Already Renewed" in self.driver.page_source:
+                    return "今日已续期"
+            except:
+                pass # 忽略页面源检查期间可能发生的错误
+
+            # [修复 3] 将复选框/单选框加入到主点击 XPath 中
+            confirm_execute_btn_xpath = (
+                "//input[@type='checkbox' or @type='radio'][not(:checked)] | "
+                "//button[contains(text(), '延長手続きを行う') or contains(text(), '確認画面に進む') or contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '選択') or contains(text(), '確定') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する') or contains(text(), '申し込む') or contains(text(), '契約')] | "
+                "//a[contains(text(), '延長手続きを行う') or contains(text(), '確認画面に進む') or contains(text(), '次へ') or contains(text(), '次に進む') or contains(text(), '选择') or contains(text(), '确定') or contains(text(), '完了') or contains(text(), '更新') or contains(text(), '更新する') or contains(text(), '申し込む') or contains(text(), '契約')]"
+            )
+
+            logger.info("在跳转后的页面上，循环查找执行或进入下一确认步骤的按钮/选项...")
+            
+            final_click_count = 0
+            max_clicks = 4  # [修复 4] 增加总点击次数 (原为3)，以防需要先点复选框
+            
+            for i in range(max_clicks):
+                
+                # **核心重试块: 处理 Stale Element Reference**
+                retry_stale = 0
+                max_stale_retries = 5 # [修复 5] 增加 Stale 重试次数 (原为3)
+                clicked = False
+                
+                while retry_stale < max_stale_retries:
+                    try:
+                        # [修复 6] 切换到 wait_for_element_clickable
+                        # 这会等待元素出现、可见 *并* 可用
+                        current_btn = self.wait_for_element_clickable(
+                            By.XPATH, 
+                            confirm_execute_btn_xpath,
+                            20 # 延长等待时间
+                        )
+                        
+                        # 获取元素信息用于日志
+                        btn_info = current_btn.get_attribute('value') or current_btn.text or current_btn.get_attribute('name')
+                        btn_info = btn_info.strip().replace('\n', ' ')
+                        
+                        # **关键: 直接使用 JS 强制点击**
+                        self.driver.execute_script("arguments[0].click();", current_btn)
+                        logger.info(f"✅ 使用 JS 强制点击成功。元素: {btn_info[:50]}") # 截断过长的文本
+                        
+                        # 成功点击
+                        clicked = True
+                        break # 跳出 while 循环
+                        
+                    except StaleElementReferenceException:
+                        retry_stale += 1
+                        logger.warning(f"检测到 Stale Element 错误，尝试重新定位并点击... (第 {retry_stale} 次)")
+                        # [修复 7] 缩短 Stale 重试等待
+                        time.sleep(3) 
+                        continue # 进入下一次 while 循环
+                    except TimeoutException:
+                        # 如果20秒内找不到可点击的按钮
+                        logger.warning(f"在第 {i+1} 轮点击中，等待确认按钮/选项超时。")
+                        break # 跳出 while 循环
+                    except Exception as e:
+                        # 捕获其他非 Stale 错误，直接向上抛出
+                        raise Exception(f"在定位/点击步骤发生错误: {str(e)}")
+
+
+                if not clicked:
+                    # 如果 while 循环结束但没有点击成功
+                    if final_click_count > 0:
+                        # 如果之前点击过（例如点了复选框），但现在找不到按钮了，假定流程结束
+                        logger.info(f"第 {i + 1} 次点击超时，但之前已点击 {final_click_count} 次，假定流程结束。")
+                        return self._check_final_result(final_click_count)
+                    else:
+                        # 第一次点击就失败(超时)，抛出异常
+                        raise TimeoutException("续期执行/确认按钮首次点击尝试失败或超时。")
+
+                final_click_count += 1
+                logger.info(f"✅ 第 {final_click_count} 次点击完成。")
+                
+                # [修复 8] 缩短每次点击后的等待
+                time.sleep(5) 
+            
+            # 3. 检查最终结果
+            return self._check_final_result(final_click_count)
 
         except TimeoutException as te:
-            self._save_screenshot("renewal_timeout")
-            return f"❌ 续期操作超时: {str(te)}"
+            # 如果在任何一个步骤中超时
+            return f"❌ 续期操作超时: {str(te)}。请手动检查服务状态，可能按钮文本已变更。"
         except Exception as e:
-            self._save_screenshot("renewal_error")
             return f"❌ 续期过程中发生错误: {str(e)}"
     
     def run(self):
@@ -326,3 +391,4 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"脚本运行失败: {str(e)}")
         exit(1)
+
