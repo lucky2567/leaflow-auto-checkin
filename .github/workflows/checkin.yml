@@ -23,38 +23,32 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # 假设 requirements.txt 中包含了 selenium, requests, etc.
-        pip install -r requirements.txt
+        pip install selenium requests webdriver-manager
         
     - name: Install Chrome
       run: |
         sudo apt-get update
-        # 确保安装了 Google Chrome 稳定版
         sudo apt-get install -y google-chrome-stable
         
     - name: Run Xserver Renewal Script 🛠️
       env:
-        # =========================================================
-        # 💥 关键修改：添加 XSERVER_SERVER_ID 环境变量
-        # =========================================================
-        
-        # Xserver 单账号登录凭证 (必填)
         XSERVER_USERNAME: ${{ secrets.XSERVER_USERNAME }}
         XSERVER_PASSWORD: ${{ secrets.XSERVER_PASSWORD }}
-        
-        # 💥 必须添加此项，否则 Python 脚本会因缺少凭证而失败
         XSERVER_SERVER_ID: ${{ secrets.XSERVER_SERVER_ID }}
-        
-        # Xserver 多账号列表 (可选, 优先级低于单账号)
         XSERVER_ACCOUNTS: ${{ secrets.XSERVER_ACCOUNTS }}
-        
-        # Telegram 通知设置 (可选)
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        
-        # 标志当前运行环境为 GitHub Actions (由脚本读取)
-        CHROME_HEADLESS: true # 明确设置无头模式
+        CHROME_HEADLESS: true
         
       run: |
-        # 💥 运行脚本文件
         python leaflow_checkin.py
+        
+    - name: Upload debug files
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: xserver-debug-files
+        path: |
+          *.png
+          *.html
+          debug.log
