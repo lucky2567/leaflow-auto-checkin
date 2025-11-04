@@ -9,7 +9,6 @@ Xserver 游戏面板自动续期脚本
     - XSERVER_PASSWORD：您的 Xserver 密码
     - XSERVER_SERVER_ID：您的 Xserver 服务器标识符/客户ID (新增必填项)
 2. 多账号模式（次选）：
-    - X（次选）：
     - XSERVER_ACCOUNTS：ID1:Pass1,ID2:Pass2,... (逗号分隔)
 
 可选通知：
@@ -195,7 +194,7 @@ class XserverRenewal:
                 raise Exception(f"登录成功，但未找到预期的服务管理链接。当前URL: {current_url}")
             
         except TimeoutException:
-            raise Exception(f"登录页面元素加载超时或登录后未跳转。当前URL: {self.d转。当前URL: {self.driver.current_url}")
+            raise Exception(f"登录页面元素加载超时或登录后未跳转。当前URL: {self.driver.current_url}")
         except NoSuchElementException:
             raise Exception("登录页面元素定位失败，请检查选择器。")
         except Exception as e:
@@ -229,7 +228,7 @@ class XserverRenewal:
             # 备选 XPath 
             backup_entry_btn_xpath = (
                 "//button[contains(text(), '期限延長') or contains(text(), '期限を延長する') or contains(text(), '期限を延長していただく必要がございます') or contains(text(), 'アップグレード・期限延長')] | "
-                "//a[contains(text(), '期限延長') or contains(text(), '期限を延長する') or contains(text(), '期限を延長していただく必要がござ延長していただく必要がございます') or contains(text(), 'アップグレード・期限延長')]"
+                "//a[contains(text(), '期限延長') or contains(text(), '期限を延長する') or contains(text(), '期限を延長していただく必要がございます') or contains(text(), 'アップグレード・期限延長')]"
             )
             
             try:
@@ -325,4 +324,147 @@ class XserverRenewal:
         result = "未执行"
         
         try:
-            logger.info(f"开始处理账号: {self.username[:3] + '***
+            logger.info(f"开始处理账号: {self.username[:3] + '***'}")
+            
+            if self.login():
+                result = self.renew_service()
+                logger.info(f"续期结果: {result}")
+                success = "✅" in result or "已续期" in result
+                return success, result, result
+            else:
+                pass
+                
+        except Exception as e:
+            error_msg = f"自动续期失败: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg, "未知错误"
+            
+        finally:
+            if self.driver:
+                self.driver.quit()
+
+class MultiAccountManager:
+    """多账号管理器 - 适配 Xserver"""
+    
+    def __init__(self):
+        self.telegram_bot_token = os.getenv('TELEGRAM_BOT_TOKEN', '')
+        self.telegram_chat_id = os.getenv('TELEGRAM_CHAT_ID', '')
+        self.accounts = self.load_accounts()
+    
+    def load_accounts(self):
+        """从环境变量加载多账号信息"""
+        accounts = []
+        logger.info("开始加载 XSERVER 账号配置...")
+        
+        # 方法1: 逗号分隔多账号格式 (XSERVER_ACCOUNTS)
+        accounts_str = os.getenv('XSERVER_ACCOUNTS', '').strip()
+        if accounts_str:
+            try:
+                account_pairs = [pair.strip() for pair in accounts_str.split(',')]
+                for i, pair in enumerate(account_pairs):
+                    if ':' in pair:
+                        username, password = pair.split(':', 1)
+                        if username.strip() and password.strip():
+                            accounts.append({'username': username.strip(), 'password': password.strip()})
+                            logger.info(f"成功添加第 {i+1} 个账号 (来自 XSERVER_ACCOUNTS)")
+            except Exception as e:
+                logger.error(f"解析 XSERVER_ACCOUNTS 配置失败: {e}")
+                
+        if accounts: return accounts
+
+        # 方法2: 单账号格式 (XSERVER_USERNAME 和 XSERVER_PASSWORD)
+        single_username = os.getenv('XSERVER_USERNAME', '').strip()
+        single_password = os.getenv('XSERVER_PASSWORD', '').strip()
+        
+        if single_username and single_password:
+            accounts.append({'username': single_username, 'password': single_password})
+            logger.info("加载了单个账号配置 (来自 XSERVER_USERNAME/PASSWORD)")
+            return accounts
+        
+        # 失败处理
+        logger.error("未找到有效的 XSERVER 账号配置")
+        logger.error("请设置 XSERVER_USERNAME/XSERVER_PASSWORD/XSERVER_SERVER_ID 或 XSERVER_ACCOUNTS 环境变量。")
+        raise ValueError("未找到有效的 XSERVER 账号配置")
+    
+    def send_notification(self, results):
+        """发送汇总通知到Telegram - 续期专用模板"""
+        if not self.telegram_bot_token or not self.telegram_chat_id:
+            logger.info("Telegram配置未设置，跳过通知")
+            return
+        
+        try:
+            success_count = sum(1 for _, success, _, _ in results if success)
+            total_count = len(results)
+            current_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+            
+            message = f"🛠️ Xserver 自动续期通知\n"
+            message += f"📊 成功: {success_count}/{total_count}\n"
+            message += f"📅 执行时间：{current_date}\n\n"
+            
+            for username, success, result, _ in results:
+                masked_username = username[:3] + "***" + username[-4:]
+                status = "✅" if success else "❌"
+                message += f"账号：{masked_username}\n"
+                message += f"{status} 续期结果：{result}\n\n"
+            
+            url = f"https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage"
+            data = {"chat_id": self.telegram_chat_id, "text": message, "parse_mode": "HTML"}
+            response = requests.post(url, data=data, timeout=10)
+            
+            if response.status_code != 200:
+                logger.error(f"Telegram通知发送失败: {response.text}")
+                
+        except Exception as e:
+            logger.error(f"发送Telegram通知时出错: {e}")
+    
+    def run_all(self):
+        """运行所有账号的续期流程"""
+        if not self.accounts:
+            logger.error("无账号可处理，退出。")
+            return False, []
+            
+        logger.info(f"开始执行 {len(self.accounts)} 个账号的续期任务")
+        results = []
+        
+        for i, account in enumerate(self.accounts, 1):
+            logger.info(f"处理第 {i}/{len(self.accounts)} 个账号 ({account['username'][:3] + '***'})")
+            
+            try:
+                os.environ['XSERVER_SERVER_ID'] = os.getenv('XSERVER_SERVER_ID', '')
+                renewal = XserverRenewal(account['username'], account['password'])
+                success, result, info_summary = renewal.run()
+                results.append((account['username'], success, result, info_summary))
+                
+                if i < len(self.accounts):
+                    wait_time = 10
+                    logger.info(f"等待{wait_time}秒后处理下一个账号...")
+                    time.sleep(wait_time)
+                    
+            except Exception as e:
+                error_msg = f"处理账号时发生致命异常: {str(e)}"
+                logger.error(error_msg)
+                results.append((account['username'], False, error_msg, "未知"))
+                
+        self.send_notification(results)
+        success_count = sum(1 for _, success, _, _ in results if success)
+        return success_count == len(self.accounts), results
+
+if __name__ == "__main__":
+    try:
+        manager = MultiAccountManager()
+        if not manager.accounts:
+            logger.error("没有账号需要处理。")
+        else:
+            success, results = manager.run_all()
+            if not success:
+                logger.error("部分或全部账号续期失败，请检查日志和通知。")
+                exit(1)
+            else:
+                logger.info("所有账号续期完成，流程成功。")
+                
+    except ValueError as ve:
+        logger.error(f"致命配置错误: {ve}")
+        exit(1)
+    except Exception as e:
+        logger.error(f"脚本运行时发生未捕获的全局错误: {e}")
+        exit(1)
