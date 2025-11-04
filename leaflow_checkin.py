@@ -432,7 +432,7 @@ class MultiAccountManager:
         
         # 失败处理
         logger.error("未找到有效的 XSERVER 账号配置")
-        logger.error("请设置 XSERVER_USERNAME/XSERVER_PASSWORD/XSERVER_SERVER_ID 或 XSERVER_ACCOUNTS 环境变量。")
+        logger.error("请设置 XSERVER_USERNAME/XSERVER_PASSWORD/XSERVER_SERVER_ID 或ASSWORD/XSERVER_SERVER_ID 或 XSERVER_ACCOUNTS 环境变量。")
         raise ValueError("未找到有效的 XSERVER 账号配置")
     
     def send_notification(self, results):
