@@ -21,7 +21,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, ElementClickInterceptedException, StaleElementReferenceException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 import requests
 from datetime import datetime
 import os.path
@@ -221,7 +221,7 @@ class XserverRenewal:
             # 1. 查找并点击主页上的入口按钮 (Step 1: Go to renewal page)
             logger.info("查找主页上引导进入续期流程的入口按钮...")
             
-            # **使用最精确的 XPath 定位“期限を延長する”按钮**
+            # 使用最精确的 XPath 定位“期限を延長する”按钮
             entry_btn_xpath = "//a[@href='/xmgame/game/freeplan/extend/input']"
 
             # 备选 XPath 
@@ -255,11 +255,11 @@ class XserverRenewal:
                 
             logger.info("已点击续期入口按钮，等待跳转到确认/套餐页面...")
             
-            # **优化：增加超长硬等待，等待页面DOM彻底稳定 (15秒)**
+            # 增加超长硬等待，等待页面DOM彻底稳定 (15秒)
             time.sleep(15)
             logger.info("已完成 15 秒硬等待，开始尝试点击确认按钮...")
             
-            # --- 新增步骤：尝试解决 Stale Element 根源问题，处理复选框/单选框 ---
+            # 处理复选框/单选框
             try:
                 # 查找所有隐藏的或可见的、未被选中的复选框/单选框
                 checkboxes = self.driver.find_elements(By.XPATH, "//input[@type='checkbox' or @type='radio']")
@@ -271,7 +271,6 @@ class XserverRenewal:
                         time.sleep(1) # 每次点击后等待1秒，以防DOM再次刷新
             except Exception as e:
                 logger.warning(f"尝试强制点击复选框/单选框时出现次要错误: {e}")
-            # ----------------------------------------------------------------------
 
             # 2. 循环点击确认/执行按钮 (Step 2/3/...)
             
@@ -291,7 +290,7 @@ class XserverRenewal:
             max_clicks = 3  # 最多尝试点击三次
             
             for i in range(max_clicks):
-                # **核心重试块：处理 Stale Element Reference**
+                # 核心重试块：处理 Stale Element Reference
                 retry_stale = 0
                 max_stale_retries = 3
                 clicked = False
@@ -299,7 +298,7 @@ class XserverRenewal:
                 
                 while retry_stale < max_stale_retries:
                     try:
-                        # **优化：使用 wait_for_element_present (存在即可)**
+                        # 使用 wait_for_element_present (存在即可)
                         current_btn = self.wait_for_element_present(
                             By.XPATH, 
                             confirm_execute_btn_xpath,
@@ -310,7 +309,7 @@ class XserverRenewal:
                         if not current_btn.is_enabled():
                             raise Exception("找到的确认按钮不可用，流程中断。")
 
-                        # **关键：直接使用 JS 强制点击**
+                        # 关键：直接使用 JS 强制点击
                         self.driver.execute_script("arguments[0].click();", current_btn)
                         logger.info(f"✅ 使用 JS 强制点击成功。按钮文本: {current_btn.text}")
                         
@@ -347,4 +346,91 @@ class XserverRenewal:
             return f"❌ 续期过程中发生错误: {str(e)}"
 
     def run(self):
-        """执行单个账号的完整续期流程
+        """执行单个账号的完整续期流程"""
+        result = "未执行"
+        
+        try:
+            logger.info(f"开始处理账号: {self.username[:3] + '***'}")
+            
+            # 1. 登录
+            if self.login():
+                # 2. 续期
+                result = self.renew_service()
+                logger.info(f"续期结果: {result}")
+                
+                success = "✅" in result or "已续期" in result
+                return success, result
+            else:
+                return False, "登录未成功"
+                
+        except Exception as e:
+            error_msg = f"自动续期失败: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+            
+        finally:
+            if self.driver:
+                self.driver.quit()
+
+
+# 发送Telegram通知
+def send_telegram_notification(result, username):
+    """发送续期结果到Telegram"""
+    bot_token = os.getenv('TELEGRAM_BOT_TOKEN', '')
+    chat_id = os.getenv('TELEGRAM_CHAT_ID', '')
+    
+    if not bot_token or not chat_id:
+        logger.info("Telegram配置未设置，跳过通知")
+        return
+    
+    try:
+        current_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        masked_username = username[:3] + "***" + username[-4:] if len(username) > 7 else username
+        
+        message = f"🛠️ Xserver 自动续期通知\n"
+        message += f"📅 执行时间：{current_date}\n"
+        message += f"账号：{masked_username}\n"
+        message += f"结果：{result}\n"
+        
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        data = {"chat_id": chat_id, "text": message}
+        response = requests.post(url, data=data, timeout=10)
+        
+        if response.status_code != 200:
+            logger.error(f"Telegram通知发送失败: {response.text}")
+            
+    except Exception as e:
+        logger.error(f"发送Telegram通知时出错: {e}")
+
+
+# 主入口
+if __name__ == "__main__":
+    try:
+        # 读取环境变量
+        username = os.getenv('XSERVER_USERNAME', '').strip()
+        password = os.getenv('XSERVER_PASSWORD', '').strip()
+        server_id = os.getenv('XSERVER_SERVER_ID', '').strip()
+        
+        # 验证环境变量
+        if not all([username, password, server_id]):
+            raise ValueError("请确保设置了所有必要的环境变量：XSERVER_USERNAME, XSERVER_PASSWORD, XSERVER_SERVER_ID")
+        
+        # 执行续期
+        renewal = XserverRenewal(username, password, server_id)
+        success, result = renewal.run()
+        
+        # 发送通知
+        send_telegram_notification(result, username)
+        
+        if not success:
+            logger.error("续期失败，请检查日志")
+            exit(1)
+        else:
+            logger.info("续期流程完成，一切正常")
+            
+    except ValueError as ve:
+        logger.error(f"配置错误: {ve}")
+        exit(1)
+    except Exception as e:
+        logger.error(f"脚本运行错误: {e}")
+        exit(1)
