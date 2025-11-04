@@ -176,7 +176,7 @@ class XserverRenewal:
         
         return f"❌ 续期失败：未找到明确结果。当前URL: {current_url}"
 
-def renew_service(self):
+def renew_service(self):    
         """执行多步骤续期操作: 1. 点击入口按钮 -> 2. 循环点击确认/执行按钮"""
         
         logger.info("已位于游戏面板首页，开始查找续期入口按钮...")
@@ -391,4 +391,5 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"脚本运行失败: {str(e)}")
         exit(1)
+
 
