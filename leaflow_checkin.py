@@ -33,7 +33,6 @@ import os.path
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -54,7 +53,7 @@ class XserverRenewal:
         self.setup_driver()
     
     def setup_driver(self):
-        """修复ChromeDriver初始化问题"""
+        """设置Chrome驱动选项并自动管理ChromeDriver"""
         chrome_options = Options()
         
         # GitHub Actions环境配置 (无头模式)
@@ -67,28 +66,23 @@ class XserverRenewal:
         # 反爬虫配置
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
             logger.info("正在配置 ChromeDriver...")
             
-            # 关键修复：使用ChromeDriverManager并手动修正路径
+            # 使用新版webdriver-manager直接获取驱动路径
             driver_path = ChromeDriverManager().install()
+            logger.info(f"驱动路径: {driver_path}")
             
-            # 修正路径问题（处理THIRD_PARTY_NOTICES错误）
-            if "THIRD_PARTY_NOTICES" in driver_path:
-                base_dir = os.path.dirname(os.path.dirname(driver_path))
-                driver_path = os.path.join(base_dir, "chromedriver-linux64", "chromedriver")
-            
-            logger.info(f"最终驱动路径: {driver_path}")
-            
-            # 验证驱动文件
+            # 验证驱动文件是否存在
             if not os.path.exists(driver_path):
                 raise FileNotFoundError(f"驱动文件不存在: {driver_path}")
-            
+                
             # 赋予执行权限
             os.chmod(driver_path, 0o755)
             
-            # 初始化服务
+            # 初始化Service
             service = Service(driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -149,7 +143,7 @@ class XserverRenewal:
             
             # 等待续期页加载（验证URL包含"extend"）
             WebDriverWait(self.driver, 30).until(
-                lambda d: "extend" in d.current_url
+                lambda d: "extend" in d.current_url or "input" in d.current_url
             )
             time.sleep(5)
             logger.info("已跳转到续期页面")
@@ -157,16 +151,18 @@ class XserverRenewal:
             # ======================== 步骤2：续期页点击绿色"期限を延長する" ========================
             logger.info("步骤2/3：查找续期页绿色按钮...")
             
-            # 精确匹配绿色"期限を延長する"按钮
+            # 精确匹配绿色"期限を延長する"按钮（根据您提供的HTML结构优化）
             green_renew_btn = self.wait_for_element_clickable(
-                By.XPATH, "//button[contains(text(), '期限を延長する')]", 30
+                By.XPATH, "//a[@class='baseBtn btn--loading' and @href='/xmgame/game/freeplan/extend/input']", 30
             )
             
             # 强制滚动并点击
+            self.driver.execute_script("arguments[0].style.border='3px solid red';", green_renew_btn)
+            time.sleep(2)  # 可视化确认
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", green_renew_btn)
             self.driver.execute_script("arguments[0].click();", green_renew_btn)
-            logger.info("✅ 已点击绿色'期限を延長する'按钮")
-            
+            logger.info(f"✅ 已点击绿色续期按钮: {green_renew_btn.text}")
+
             # 等待确认页加载
             WebDriverWait(self.driver, 30).until(
                 lambda d: "confirm" in d.current_url or "check" in d.current_url
@@ -174,27 +170,38 @@ class XserverRenewal:
             time.sleep(5)
             logger.info("已跳转到确认页面")
 
-            # ======================== 步骤3：确认页点击最终提交按钮 ========================
+            # ======================== 步骤3：点击最终确认按钮 ========================
             logger.info("步骤3/3：查找确认页提交按钮...")
             
-            # 匹配确认页最终按钮（如"確認画面に進む"或"延長する"）
-            final_confirm_btn = self.wait_for_element_clickable(
-                By.XPATH, "//button[contains(text(), '確認画面に進む') or contains(text(), '延長する')]", 30
-            )
+            confirm_btn_xpaths = [
+                "//button[contains(text(), '確認画面に進む')]",
+                "//button[contains(text(), '延長する')]",
+                "//button[contains(@class, 'btn-confirm')]"
+            ]
             
-            # 强制滚动并点击
-            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", final_confirm_btn)
-            self.driver.execute_script("arguments[0].click();", final_confirm_btn)
-            logger.info("✅ 已点击确认页最终提交按钮")
+            confirm_btn = None
+            for xpath in confirm_btn_xpaths:
+                try:
+                    confirm_btn = self.wait_for_element_clickable(By.XPATH, xpath, 15)
+                    break
+                except TimeoutException:
+                    continue
             
-            # 验证续期成功
+            if not confirm_btn:
+                raise TimeoutException("无法定位最终确认按钮")
+                
+            self.driver.execute_script("arguments[0].click();", confirm_btn)
+            logger.info(f"✅ 已点击最终确认按钮: {confirm_btn.text}")
+
+            # 验证结果
             WebDriverWait(self.driver, 30).until(
-                lambda d: "更新完了" in d.page_source or "Renewal Complete" in d.page_source
+                lambda d: "更新完了" in d.page_source or "成功" in d.page_source
             )
             return "✅ 服务续期成功！"
 
         except TimeoutException as te:
-            return f"❌ 续期超时：未找到关键按钮 - {str(te)}"
+            self.driver.save_screenshot("timeout_error.png")
+            return f"❌ 续期超时：{str(te)}。已保存截图供调试。"
         except Exception as e:
             return f"❌ 续期失败: {str(e)}"
 
