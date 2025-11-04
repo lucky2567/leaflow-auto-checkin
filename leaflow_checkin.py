@@ -6,6 +6,7 @@ Xserver 游戏面板自动续期脚本（单账号版）
 import os
 import time
 import logging
+import shutil
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -17,10 +18,10 @@ from selenium.common.exceptions import (
 )
 import requests
 from datetime import datetime
-import os.path
 
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.utils import read_version_from_cmd, PATTERN
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,16 +40,16 @@ class XserverRenewal:
         self.setup_driver()
     
     def setup_driver(self):
-        """设置Chrome驱动"""
+        """设置Chrome驱动（修复驱动路径问题）"""
         chrome_options = Options()
         
         if os.getenv('GITHUB_ACTIONS') or os.getenv('CHROME_HEADLESS', 'true').lower() == 'true':
-            chrome_options.add_argument('--headless=new')  # 使用新的无头模式
+            chrome_options.add_argument('--headless=new')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
             chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--remote-debugging-port=9222')  # 增加调试端口，增强稳定性
+            chrome_options.add_argument('--remote-debugging-port=9222')
             
         # 反爬虫配置
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
@@ -57,10 +58,24 @@ class XserverRenewal:
         
         try:
             logger.info("正在配置 ChromeDriver...")
-            service = Service(ChromeDriverManager().install())
+            
+            # 手动获取正确的ChromeDriver路径（核心修复）
+            driver_path = ChromeDriverManager().install()
+            # 从安装路径中找到真正的可执行文件
+            if 'chromedriver-linux64' in driver_path:
+                # 修正路径：找到chromedriver可执行文件
+                driver_dir = os.path.dirname(driver_path)
+                actual_driver_path = os.path.join(driver_dir, 'chromedriver')
+                if os.path.exists(actual_driver_path) and os.access(actual_driver_path, os.X_OK):
+                    driver_path = actual_driver_path
+                else:
+                    raise FileNotFoundError(f"未找到可执行的chromedriver: {actual_driver_path}")
+
+            logger.info(f"使用正确的驱动路径: {driver_path}")
+            service = Service(driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            self.driver.implicitly_wait(10)  # 全局隐式等待
+            self.driver.implicitly_wait(10)
             logger.info("Chrome 驱动启动成功")
             
         except Exception as e:
@@ -68,13 +83,11 @@ class XserverRenewal:
             raise
     
     def wait_for_element_clickable(self, by, value, timeout=30):
-        """延长超时时间，等待元素可点击"""
         return WebDriverWait(self.driver, timeout).until(
             EC.element_to_be_clickable((by, value))
         )
     
     def wait_for_element_present(self, by, value, timeout=30):
-        """延长超时时间，等待元素出现"""
         return WebDriverWait(self.driver, timeout).until(
             EC.presence_of_element_located((by, value))
         )
@@ -116,7 +129,7 @@ class XserverRenewal:
                 )
                 self.driver.execute_script("arguments[0].click();", manage_link)
                 logger.info("已点击管理链接，等待页面加载")
-                time.sleep(8)  # 延长等待时间
+                time.sleep(8)
                 return True
                 
             except NoSuchElementException:
@@ -146,12 +159,12 @@ class XserverRenewal:
         return "❌ 续期失败：未找到明确结果，请手动检查"
 
     def renew_service(self):
-        """执行续期操作（优化版）"""
+        """执行续期操作"""
         logger.info("开始查找续期入口按钮")
         time.sleep(5)
         
         try:
-            # 1. 查找续期入口按钮（扩展定位表达式）
+            # 1. 查找续期入口按钮
             entry_xpaths = [
                 "//a[@href='/xmgame/game/freeplan/extend/input']",
                 "//a[contains(@href, 'extend') and contains(text(), '延長')]",
@@ -173,9 +186,9 @@ class XserverRenewal:
             # 点击入口按钮
             self.driver.execute_script("arguments[0].click();", entry_btn)
             logger.info("已点击续期入口按钮，等待页面跳转")
-            time.sleep(10)  # 延长跳转等待时间
+            time.sleep(10)
 
-            # 2. 处理续期确认按钮（增强版定位）
+            # 2. 处理续期确认按钮
             confirm_xpaths = [
                 "//button[contains(text(), '延長手続きを行う')]",
                 "//button[contains(text(), '確認画面に進む') or contains(text(), '次へ')]",
@@ -184,10 +197,9 @@ class XserverRenewal:
                 "//button[contains(text(), '更新する') or contains(text(), '申し込む')]"
             ]
             
-            # 最多尝试5次点击（应对动态页面）
+            # 最多尝试5次点击
             for attempt in range(5):
                 try:
-                    # 每次尝试都重新定位按钮（解决Stale Element）
                     confirm_btn = None
                     for xpath in confirm_xpaths:
                         try:
@@ -200,10 +212,9 @@ class XserverRenewal:
                         time.sleep(5)
                         continue
                     
-                    # 强制点击并等待
                     self.driver.execute_script("arguments[0].click();", confirm_btn)
                     logger.info(f"第 {attempt+1} 次点击确认按钮成功")
-                    time.sleep(8)  # 等待页面响应
+                    time.sleep(8)
                     
                 except (StaleElementReferenceException, ElementNotInteractableException):
                     logger.warning(f"第 {attempt+1} 次点击失败，重试中...")
