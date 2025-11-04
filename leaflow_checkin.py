@@ -4,7 +4,6 @@ Xserver 游戏面板自动续期脚本 (单账号版)
 
 使用方法：
 在运行环境中设置以下环境变量/Secrets：
-设置以下环境变量/Secrets：
 - XSERVER_USERNAME：您的 Xserver 登录ID
 - XSERVER_PASSWORD：您的 Xserver 密码
 - XSERVER_SERVER_ID：您的 Xserver 服务器标识符/客户ID
@@ -18,6 +17,7 @@ import os
 import time
 import logging
 from selenium import webdriver
+from seleniumfrom selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -110,7 +110,6 @@ class XserverRenewal:
             
         except Exception as e:
             self.driver.save_screenshot("login_error.png")
-.save_screenshot("login_error.png")
             raise Exception(f"登录失败: {str(e)}")
 
     def renew_service(self):
