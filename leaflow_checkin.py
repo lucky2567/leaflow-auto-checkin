@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 """
-Xserver 游戏面板自动续期脚本 (严格三步流程版)
+Xserver 游戏面板自动续期脚本 (修复版)
+
+使用方法：
+在运行环境中设置以下环境变量/Secrets：
+1. 单账号模式（推荐）：
+    - XSERVER_USERNAME：您的 Xserver 登录ID
+    - XSERVER_PASSWORD：您的 Xserver 密码
+    - XSERVER_SERVER_ID：您的 Xserver 服务器标识符/客户ID (新增必填项)
+2. 多账号模式（次选）：
+    - XSERVER_ACCOUNTS：ID1:Pass1,ID2:Pass2,... (逗号分隔)
+
+可选通知：
+    - TELEGRAM_BOT_TOKEN
+    - TELEGRAM_CHAT_ID
 """
 
 import os
@@ -11,11 +24,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, ElementClickInterceptedException, StaleElementReferenceException
 import requests
 from datetime import datetime
 import os.path
 
+# 导入 webdriver-manager 相关的库
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
@@ -28,8 +42,11 @@ class XserverRenewal:
     def __init__(self, username, password):
         self.username = username
         self.password = password
+        
+        # 从环境变量读取服务器标识符
         self.server_id = os.getenv('XSERVER_SERVER_ID', '').strip()
         
+        # 验证所有必要凭证
         if not self.username or not self.password or not self.server_id:
             raise ValueError("登录ID、密码或服务器标识符（XSERVER_SERVER_ID）不能为空")
         
@@ -37,10 +54,10 @@ class XserverRenewal:
         self.setup_driver()
     
     def setup_driver(self):
-        """设置Chrome驱动"""
+        """修复后的驱动初始化方法"""
         chrome_options = Options()
         
-        # 无头模式配置
+        # GitHub Actions环境配置 (无头模式)
         if os.getenv('GITHUB_ACTIONS') or os.getenv('CHROME_HEADLESS', 'true').lower() == 'true':
             chrome_options.add_argument('--headless')
             chrome_options.add_argument('--no-sandbox')
@@ -53,17 +70,29 @@ class XserverRenewal:
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
-            logger.info("正在配置 ChromeDriver...")
+            logger.info("正在自动配置 ChromeDriver...")
+            
+            # 使用新版webdriver-manager直接获取驱动路径
             driver_path = ChromeDriverManager().install()
+            logger.info(f"驱动路径: {driver_path}")
+            
+            # 验证驱动文件是否存在
+            if not os.path.exists(driver_path):
+                raise FileNotFoundError(f"驱动文件不存在: {driver_path}")
+                
+            # 赋予执行权限
+            os.chmod(driver_path, 0o755)
+            
+            # 初始化Service
             service = Service(driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            logger.info("Chrome 驱动启动成功。")
+            logger.info("Chrome 驱动启动成功")
             
         except Exception as e:
             logger.error(f"驱动初始化失败: {e}")
             raise
-    
+
     def wait_for_element_clickable(self, by, value, timeout=30):
         """等待元素可点击（延长超时时间）"""
         return WebDriverWait(self.driver, timeout).until(
@@ -97,7 +126,6 @@ class XserverRenewal:
         except Exception as e:
             raise Exception(f"登录失败: {str(e)}")
 
-
     def renew_service(self):
         """严格三步续期流程"""
         try:
@@ -118,7 +146,7 @@ class XserverRenewal:
             WebDriverWait(self.driver, 30).until(
                 lambda d: "extend" in d.current_url
             )
-            time.sleep(5)  # 稳定页面
+            time.sleep(5)
             logger.info("已跳转到续期页面")
 
             # ======================== 步骤2：续期页点击绿色"期限を延長する" ========================
@@ -138,7 +166,7 @@ class XserverRenewal:
             WebDriverWait(self.driver, 30).until(
                 lambda d: "confirm" in d.current_url or "check" in d.current_url
             )
-            time.sleep(5)  # 稳定页面
+            time.sleep(5)
             logger.info("已跳转到确认页面")
 
             # ======================== 步骤3：确认页点击最终提交按钮 ========================
@@ -165,7 +193,6 @@ class XserverRenewal:
         except Exception as e:
             return f"❌ 续期失败: {str(e)}"
 
-
     def run(self):
         """执行完整流程"""
         try:
@@ -180,7 +207,6 @@ class XserverRenewal:
         finally:
             if self.driver:
                 self.driver.quit()
-
 
 class MultiAccountManager:
     """多账号管理器"""
@@ -234,7 +260,6 @@ class MultiAccountManager:
         
         self.send_notification(results)
         return all(r[1] for r in results), results
-
 
 if __name__ == "__main__":
     try:
