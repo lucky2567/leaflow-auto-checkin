@@ -2,16 +2,16 @@
 """
 Xserver 游戏面板自动续期脚本
 
-使用方法:
-在运行环境中设置以下环境变量/Secrets:
-1. 单账号模式(推荐):
-    - XSERVER_USERNAME: 您的 Xserver 登录ID
-    - XSERVER_PASSWORD: 您的 Xserver 密码
-    - XSERVER_SERVER_ID: 您的 Xserver 服务器标识符/客户ID (新增必填项)
-2. 多账号模式(次选):
-    - XSERVER_ACCOUNTS: ID1:Pass1,ID2:Pass2,... (逗号分隔)
+使用方法：
+在运行环境中设置以下环境变量/Secrets：
+1. 单账号模式（推荐）：
+    - XSERVER_USERNAME：您的 Xserver 登录ID
+    - XSERVER_PASSWORD：您的 Xserver 密码
+    - XSERVER_SERVER_ID：您的 Xserver 服务器标识符/客户ID (必填项)
+2. 多账号模式（次选）：
+    - XSERVER_ACCOUNTS：ID1:Pass1,ID2:Pass2,... (逗号分隔)
 
-可选通知:
+可选通知：
     - TELEGRAM_BOT_TOKEN
     - TELEGRAM_CHAT_ID
 """
@@ -33,9 +33,14 @@ import os.path
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
+
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# =========================================================================
+# Xserver 续期类
+# =========================================================================
 
 class XserverRenewal:
     def __init__(self, username, password):
@@ -47,7 +52,7 @@ class XserverRenewal:
         
         # 验证所有必要凭证
         if not self.username or not self.password or not self.server_id:
-            raise ValueError("登录ID、密码或服务器标识符(XSERVER_SERVER_ID)不能为空")
+            raise ValueError("登录ID、密码或服务器标识符（XSERVER_SERVER_ID）不能为空")
         
         self.driver = None
         self.setup_driver()
@@ -64,7 +69,7 @@ class XserverRenewal:
             chrome_options.add_argument('--disable-gpu')
             chrome_options.add_argument('--window-size=1920,1080')
             
-        # 通用配置: 反爬虫检测
+        # 通用配置：反爬虫检测
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
@@ -76,7 +81,7 @@ class XserverRenewal:
             driver_path_returned = ChromeDriverManager().install()
             logger.info(f"WebDriverManager 返回的路径: {driver_path_returned}")
             
-            # 兼容处理: 尝试构造正确的驱动可执行文件路径
+            # 兼容处理：尝试构造正确的驱动可执行文件路径
             parent_dir = os.path.dirname(driver_path_returned) 
             base_dir = os.path.dirname(parent_dir) 
             final_driver_path = os.path.join(base_dir, 'chromedriver-linux64', 'chromedriver')
@@ -87,7 +92,7 @@ class XserverRenewal:
             logger.info(f"尝试的最终驱动路径: {final_driver_path}")
             
             if not os.path.exists(final_driver_path):
-                 raise FileNotFoundError(f"致命错误: 未找到预期的驱动文件。")
+                 raise FileNotFoundError(f"致命错误：未找到预期的驱动文件。")
 
             # 赋予执行权限
             os.chmod(final_driver_path, 0o755) 
@@ -168,15 +173,19 @@ class XserverRenewal:
 
             current_url = self.driver.current_url
             
-            # 检查是否登录成功
+            # 新的成功判断逻辑：检查页面上是否存在跳转到服务管理的按钮/链接
             try:
+                # 尝试找到一个明确指示登录成功的元素 (例如，一个管理按钮/链接)
                 manage_link = self.driver.find_element(
                     By.XPATH, 
                     "//a[contains(text(), '管理') or contains(text(), 'Manage')] | //button[contains(text(), '管理') or contains(text(), 'Manage')]"
                 )
                 logger.info(f"登录成功，当前URL: {current_url}。已找到管理链接。")
                 
+                # 必须点击这个管理链接才能进入续费页面
                 manage_link.click()
+                
+                # 强制等待 10 秒，等待页面跳转和稳定
                 logger.info("已点击管理链接，等待页面跳转和稳定 (10秒)...")
                 time.sleep(10) 
                 
@@ -188,9 +197,11 @@ class XserverRenewal:
                     raise Exception(f"点击管理链接后跳转失败或页面异常。当前URL: {current_url_after_click}")
                 
             except NoSuchElementException:
+                # 如果找不到管理链接，则检查是否停留在错误页面
                 if "認証エラー" in self.driver.page_source or "Error" in self.driver.page_source or "username" in self.driver.current_url:
-                    raise Exception("登录失败: 登录凭证/服务器标识符错误。")
+                    raise Exception("登录失败：登录凭证/服务器标识符错误。")
                 
+                # 如果找到了主页但没有管理链接，也认为成功（可能直接在主页）
                 if "game/index" in self.driver.current_url:
                     logger.info("登录成功，直接进入游戏面板主页，跳过管理链接点击。")
                     return True
@@ -207,134 +218,130 @@ class XserverRenewal:
             self._save_screenshot("login_error")
             raise Exception(f"登录失败: {str(e)}")
 
-    def _check_success(self):
-        """检查续期是否成功"""
-        success_phrases = ["更新完了", "Renewal Complete", "更新されました"]
-        return any(phrase in self.driver.page_source for phrase in success_phrases)
 
     def _check_final_result(self, final_click_count):
-        """内部方法: 检查最终页面的续期结果"""
-        if self._check_success():
+        """内部方法：检查最终页面的续期结果（根据页面截图优化）"""
+        current_url = self.driver.current_url
+        
+        # 1. 检查是否到达"确认页面"（根据需求，到达此页面即视为成功）
+        if "confirm" in current_url.lower() or "check" in current_url.lower() or "extend/input" in current_url:
+            logger.info(f"已到达续期确认页面！当前URL: {current_url}")
+            return "✅ 服务续期成功！已到达确认页面"
+        
+        # 2. 检查是否有成功关键词
+        if "更新完了" in self.driver.page_source or "Renewal Complete" in self.driver.page_source or "更新されました" in self.driver.page_source:
             return "✅ 服务续期成功！"
-        else:
-            error_elements = self.driver.find_elements(By.XPATH, "//*[contains(@class, 'error') or contains(@class, 'alert-danger')]")
-            if error_elements:
-                error_text = error_elements[0].text
-                return f"❌ 续期失败: {error_text[:200] if len(error_text) > 200 else error_text}"
-            
-            return f"❌ 续期失败: 未找到明确结果，共点击 {final_click_count} 次。请手动检查页面。"
+        
+        # 3. 检查是否有返回/完成按钮（表示流程已结束）
+        try:
+            if self.driver.find_elements(By.XPATH, "//button[contains(text(), '返回') or contains(text(), '戻る') or contains(text(), '完了')]"):
+                logger.info("检测到返回/完成按钮，流程已结束")
+                return "✅ 服务续期成功！流程已完成"
+        except Exception as e:
+            logger.warning(f"检查返回按钮时出错: {e}")
+        
+        # 4. 检查错误信息
+        error_elements = self.driver.find_elements(By.XPATH, "//*[contains(@class, 'error') or contains(@class, 'alert-danger')]")
+        if error_elements:
+            error_text = "\n".join([el.text for el in error_elements[:3]])
+            return f"❌ 续期失败：{error_text[:300]}"
+        
+        return f"❌ 续期失败：未找到明确结果（点击{final_click_count}次）。当前URL: {current_url}"
 
     def renew_service(self):
-        """执行多步骤续期操作: 1. 点击入口按钮 -> 2. 循环点击确认/执行按钮 (增强版)"""
-        
+        """执行多步骤续期操作（根据页面截图优化）"""
         logger.info("已位于游戏面板首页，开始查找续期入口按钮...")
-        time.sleep(5)
+        time.sleep(5) 
         
         try:
-            # 1. 查找并点击主页上的入口按钮
+            # 1. 查找并点击主页上的续期入口按钮（根据截图中的"アップグレード・期限延長"按钮）
             logger.info("查找主页上引导进入续期流程的入口按钮...")
             
-            # 更精确的定位策略
-            entry_btn_selectors = [
-                ("xpath", "//a[@href='/xmgame/game/freeplan/extend/input']"),  # 精确匹配
-                ("xpath", "//a[contains(@href, 'extend')]"),  # 模糊匹配
-                ("xpath", "//button[contains(text(), '期限延長')]"),  # 按钮文本
-                ("xpath", "//a[contains(text(), '期限延長')]")  # 链接文本
-            ]
+            # **根据截图优化：匹配"アップグレード・期限延長"按钮**
+            entry_btn_xpath = "//a[contains(text(), 'アップグレード・期限延長') or @href='/xmgame/game/freeplan/extend/input']"
+            backup_entry_btn_xpath = "//button[contains(text(), '期限延長') or contains(text(), '期限を延長する')]"
             
-            entry_btn = None
-            for by, selector in entry_btn_selectors:
-                try:
-                    entry_btn = self.wait_for_element_clickable(by, selector, 10)
-                    break
-                except TimeoutException:
-                    continue
-                    
-            if not entry_btn:
-                raise NoSuchElementException("无法定位续期入口按钮")
-                
-            # 使用JS点击确保可靠性
-            self.driver.execute_script("arguments[0].click();", entry_btn)
-            logger.info("已点击续期入口按钮")
-            
-            # 2. 等待页面跳转完成
             try:
-                WebDriverWait(self.driver, 20).until(
-                    lambda d: "extend" in d.current_url.lower() or "renew" in d.current_url.lower()
-                )
-                logger.info("已跳转到续期页面")
+                entry_btn = self.wait_for_element_clickable(By.XPATH, entry_btn_xpath, 15)
             except TimeoutException:
-                logger.warning("页面跳转超时，但继续执行")
+                logger.warning("精确的续期入口按钮定位失败，尝试使用备用XPath...")
+                entry_btn = self.wait_for_element_clickable(By.XPATH, backup_entry_btn_xpath, 15)
 
-            # 3. 增强的重试机制
-            max_attempts = 5
-            click_count = 0
+            # 使用 JS 强制点击入口按钮
+            self.driver.execute_script("arguments[0].click();", entry_btn)
+            logger.info("已点击续期入口按钮，使用 JS 强制点击。")
             
-            # 可能的确认按钮文本
-            confirm_btn_texts = [
-                '延長手続きを行う', '確認画面に進む', '次へ', '次に進む',
-                '選択', '確定', '完了', '更新', '更新する', '申し込む', '契約'
-            ]
+            # 等待页面跳转（根据截图中的续期页面URL特征）
+            WebDriverWait(self.driver, 20).until(
+                lambda d: "freeplan/extend" in d.current_url or "extend/input" in d.current_url
+            )
+            logger.info(f"已跳转到续期页面，当前URL: {self.driver.current_url}")
+            self._save_screenshot("renewal_page_loaded")
             
-            for attempt in range(max_attempts):
+            # 2. 处理续期页面（根据截图中的"+72時間延長"按钮）
+            logger.info("开始处理续期页面，查找延长期限按钮...")
+            
+            # **根据截图优化：匹配"+72時間延長"按钮**
+            extend_btn_xpath = "//button[contains(text(), '+72時間延長') or contains(text(), '延長期間')]"
+            confirm_btn_xpath = "//button[contains(text(), '確認画面に進む') or contains(text(), '次へ')]"
+            
+            try:
+                # 先尝试直接点击延长期限按钮
+                extend_btn = self.wait_for_element_clickable(By.XPATH, extend_btn_xpath, 15)
+                self.driver.execute_script("arguments[0].scrollIntoView();", extend_btn)
+                self.driver.execute_script("arguments[0].click();", extend_btn)
+                logger.info("已点击+72時間延長按钮")
+                time.sleep(3)
+            except TimeoutException:
+                logger.warning("未找到+72時間延長按钮，直接查找确认按钮...")
+            
+            # 3. 循环点击确认按钮，直到到达确认页面
+            max_clicks = 3
+            final_click_count = 0
+            confirm_buttons_clicked = False
+            
+            for attempt in range(max_clicks):
                 try:
-                    # 先尝试处理可能存在的复选框
-                    try:
-                        checkboxes = self.driver.find_elements(By.XPATH, "//input[@type='checkbox' or @type='radio']")
-                        for cb in checkboxes:
-                            if not cb.is_selected():
-                                self.driver.execute_script("arguments[0].click();", cb)
-                                logger.info("已勾选复选框")
-                                time.sleep(1)
-                    except Exception as e:
-                        logger.warning(f"处理复选框时出错: {e}")
-
-                    # 尝试定位确认按钮
-                    confirm_btn = None
-                    for text in confirm_btn_texts:
-                        try:
-                            confirm_btn = self.wait_for_element_clickable(
-                                By.XPATH,
-                                f"//button[contains(text(), '{text}')] | //a[contains(text(), '{text}')]",
-                                10
-                            )
-                            break
-                        except TimeoutException:
-                            continue
-                            
-                    if not confirm_btn:
-                        raise NoSuchElementException("无法定位确认按钮")
-
-                    # 确保按钮可见并点击
+                    # **根据截图优化：匹配"確認画面に進む"按钮**
+                    confirm_btn = self.wait_for_element_clickable(By.XPATH, confirm_btn_xpath, 15)
                     self.driver.execute_script("arguments[0].scrollIntoView();", confirm_btn)
                     self.driver.execute_script("arguments[0].click();", confirm_btn)
-                    click_count += 1
-                    logger.info(f"✅ 第 {click_count} 次点击成功")
+                    final_click_count += 1
+                    logger.info(f"✅ 第 {final_click_count} 次点击确认按钮：{confirm_btn.text}")
+                    confirm_buttons_clicked = True
                     
-                    # 检查是否已完成
-                    if self._check_success():
-                        return "✅ 服务续期成功！"
-                    
-                    time.sleep(5)  # 每次点击后等待
+                    # 点击后检查是否到达确认页面（核心优化点）
+                    time.sleep(5)
+                    result = self._check_final_result(final_click_count)
+                    if "✅" in result:
+                        return result
                     
                 except StaleElementReferenceException:
-                    logger.warning(f"元素状态失效，重试中... (尝试 {attempt + 1}/{max_attempts})")
-                    time.sleep(3)
+                    logger.warning(f"检测到Stale Element错误，重试中... (第 {attempt + 1} 次)")
+                    time.sleep(5)
                     continue
+                except TimeoutException:
+                    logger.warning(f"第 {attempt + 1} 次确认按钮定位超时")
+                    break
                 except Exception as e:
-                    logger.warning(f"点击时发生错误: {str(e)}，重试中...")
-                    time.sleep(3)
-                    continue
+                    logger.error(f"点击确认按钮时出错: {e}")
+                    self._save_screenshot(f"confirm_error_attempt_{attempt}")
+                    break
             
-            # 最终结果检查
-            return self._check_final_result(click_count)
+            if not confirm_buttons_clicked:
+                raise TimeoutException("未找到或未点击任何确认按钮")
+            
+            # 最终检查结果
+            self._save_screenshot("renewal_final_page")
+            return self._check_final_result(final_click_count)
 
         except TimeoutException as te:
             self._save_screenshot("renewal_timeout")
-            return f"❌ 续期操作超时: {str(te)}"
+            return f"❌ 续期操作超时：{str(te)}。当前URL: {self.driver.current_url}"
         except Exception as e:
             self._save_screenshot("renewal_error")
             return f"❌ 续期过程中发生错误: {str(e)}"
+
     
     def run(self):
         """执行单个账号的完整续期流程"""
@@ -348,23 +355,23 @@ class XserverRenewal:
                 # 2. 续期
                 result = self.renew_service()
                 
-                info_summary = result 
-                
                 logger.info(f"续期结果: {result}")
                 
                 success = "✅" in result or "已续期" in result
-                return success, result, info_summary
-            else:
-                pass 
+                return success, result, ""
                 
         except Exception as e:
             error_msg = f"自动续期失败: {str(e)}"
             logger.error(error_msg)
-            return False, error_msg, "未知错误"
+            return False, error_msg, ""
             
         finally:
             if self.driver:
                 self.driver.quit()
+
+# =========================================================================
+# 多账号管理器
+# =========================================================================
 
 class MultiAccountManager:
     """多账号管理器 - 适配 Xserver"""
@@ -392,6 +399,7 @@ class MultiAccountManager:
                             logger.info(f"成功添加第 {i+1} 个账号 (来自 XSERVER_ACCOUNTS)")
             except Exception as e:
                 logger.error(f"解析 XSERVER_ACCOUNTS 配置失败: {e}")
+                raise
                 
         if accounts: return accounts
 
@@ -422,14 +430,13 @@ class MultiAccountManager:
             
             message = f"🛠️ Xserver 自动续期通知\n"
             message += f"📊 成功: {success_count}/{total_count}\n"
-            message += f"📅 执行时间: {current_date}\n\n"
+            message += f"📅 执行时间：{current_date}\n\n"
             
             for username, success, result, _ in results:
-                masked_username = username[:3] + "***" + username[-4:]
-                
+                masked_username = username[:3] + "***" + username[-4:] if len(username) > 7 else username
                 status = "✅" if success else "❌"
-                message += f"账号: {masked_username}\n"
-                message += f"{status} 续期结果: {result}\n\n"
+                message += f"账号：{masked_username}\n"
+                message += f"{status} 续期结果：{result}\n\n"
             
             url = f"https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage"
             data = {"chat_id": self.telegram_chat_id, "text": message, "parse_mode": "HTML"}
@@ -468,11 +475,17 @@ class MultiAccountManager:
                 error_msg = f"处理账号时发生致命异常: {str(e)}"
                 logger.error(error_msg)
                 results.append((account['username'], False, error_msg, "未知"))
+                self._save_screenshot(f"account_fatal_error_{i}")
                 
         self.send_notification(results)
         
         success_count = sum(1 for _, success, _, _ in results if success)
-        return success_count == len(self.accounts), results
+        return success_count == len(results), results
+
+
+# =========================================================================
+# 主入口点
+# =========================================================================
 
 if __name__ == "__main__":
     try:
