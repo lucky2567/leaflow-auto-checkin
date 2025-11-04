@@ -23,6 +23,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, ElementClickInterceptedException, StaleElementReferenceException
 import requests
 from datetime import datetime
@@ -40,7 +41,7 @@ class XserverRenewal:
     def __init__(self, username, password, server_id):
         self.username = username
         self.password = password
-        self.server_id = server_id  # 支持 支持每个账号独立的ServerId
+        self.server_id = server_id  # 支持每个账号独立的ServerId
         
         # 验证所有必要凭证
         if not self.username or not self.password or not self.server_id:
@@ -54,7 +55,7 @@ class XserverRenewal:
         chrome_options = Options()
         
         # GitHub Actions环境配置 (无头模式)
-        if os.getenv('GITHUB_ACTIONSACTIONS') or os.getenv('CHROME_HEADLESS', 'true').lower() == 'true':
+        if os.getenv('GITHUB_ACTIONS') or os.getenv('CHROME_HEADLESS', 'true').lower() == 'true':
             chrome_options.add_argument('--headless=new')  # 新版无头模式
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
@@ -76,7 +77,7 @@ class XserverRenewal:
             # 兼容处理: 尝试构造正确的驱动可执行文件路径
             parent_dir = os.path.dirname(driver_path_returned) 
             base_dir = os.path.dirname(parent_dir) 
-            final_driver_path = os.path.join(base_dir, 'chromedchromedriver-linux64', 'chromedriver')
+            final_driver_path = os.path.join(base_dir, 'chromedriver-linux64', 'chromedriver')
             
             if not os.path.exists(final_driver_path):
                  final_driver_path = driver_path_returned
@@ -84,7 +85,8 @@ class XserverRenewal:
             logger.info(f"使用的驱动路径: {final_driver_path}")
             
             if not os.path.exists(final_driver_path):
-                 raise FileNotFoundError(f"致命错误: 未找到预期的驱动文件。")
+                ):
+                 raise FileNotFoundError("致命错误: 未找到预期的驱动文件。")
 
             # 赋予执行权限
             os.chmod(final_driver_path, 0o755) 
@@ -116,7 +118,7 @@ class XserverRenewal:
     def _save_screenshot(self, prefix):
         """保存截图用于调试"""
         try:
-            timestamp            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{prefix}_{timestamp}.png"
             self.driver.save_screenshot(filename)
             logger.info(f"已保存截图: {filename}")
@@ -127,13 +129,15 @@ class XserverRenewal:
         """执行 Xserver 登录流程"""
         logger.info(f"开始登录 Xserver 面板 (账号: {self.username[:3]}***)")
         
-        LOGIN_URL = "https://secure.xserver.ne.jp/xapanel/login/xmgame/game")
+        LOGIN_URL = "https://secure.xserver.ne.jp/xapanel/login/xmgame/game"
         self.driver.get(LOGIN_URL)
         time.sleep(3)  # 初始加载等待
         
+       
+        
         try:
             # 1. 输入登录ID (name="username")
-            username_input = self.wait_for_element_clickable(By.NAME, "username", 15)
+            username            username_input = self.wait_for_element_clickable(By.NAME, "username", 15)
             username_input.clear()
             username_input.send_keys(self.username)
             logger.info("登录ID输入完成")
@@ -149,7 +153,7 @@ class XserverRenewal:
             # 3. 输入密码 (name="server_password")
             password_input = self.wait_for_element_clickable(By.NAME, "server_password", 15)
             password_input.clear()
-            password_input.send_keys(self.password)
+            password            password_input.send_keys(self.password)
             logger.info("密码输入完成")
             time.sleep(1)
             
@@ -182,43 +186,43 @@ class XserverRenewal:
             raise Exception(f"登录失败: {str(e)}")
 
     def renew_service(self):
-        """按实际页面流程执行三级续期按钮点击，以点击最後一步為成功標誌"""
+        """按实际页面流程执行三级续期按钮点击，以点击最后一步为成功标志"""
         logger.info("开始执行续期流程...")
         time.sleep(5)  # 等待页面完全加载
 
         try:
             # ======================== 第一步：首页续期入口（第一张图）========================
             entry_btn_xpath = "//a[@href='/xmgame/game/freeplan/extend/index']"
-            entry_btn = self.wait_for_element_clickable(By.XPATH, entry_btn_xpath, 25)
+            entry_btn = self.wait_for_element_clickable(By.XPATH, entry_btn_xpath, 30)
             self.driver.execute_script("arguments[0].click();", entry_btn)
             logger.info("✅ 已点击首页续期入口按钮")
             
             # 验证跳转至续期计划页面
-            WebDriverWait(self.driver, 35).until(
+            WebDriverWait(self.driver, 36).until(
                 EC.url_contains("/freeplan/extend/index")
             )
             logger.info("已跳转到续期计划选择页面")
-            time.sleep(8)  # 增加等待时间确保页面完全加载
+            time.sleep(6)  # 增加等待时间确保页面完全加载
 
             # ======================== 第二步：续期计划选择（第二张图）========================
             extend_btn_xpath = "//a[@href='/xmgame/game/freeplan/extend/input']"
-            extend_btn = self.wait_for_element_clickable(By.XPATH, extend_btn_xpath, 40)
+            extend_btn = self.wait_for_element_clickable(By.XPATH, extend_btn_xpath, 32)
             self.driver.execute_script("arguments[0].click();", extend_btn)
             logger.info("✅ 已点击'期限を延長する'按钮")
             
             # 验证跳转至续期确认页面
-            WebDriverWait(self.driver, 45).until(
+            WebDriverWait(self.driver, 38).until(
                 EC.url_contains("/freeplan/extend/input")
             )
             logger.info("已跳转到续期确认页面")
-            time.sleep(7)
+            time.sleep(9)
 
-            # ======================== 第三步：确认提交（第三张图）- 以此步为成功标准 ==============================================
+            # ======================== 第三步：确认提交（第三张图）- 以此步为成功标准 ========================
             confirm_btn_xpath = "//button[@formaction='/xmgame/game/freeplan/extend/conf']"
-            confirm_btn = self.wait_for_element_clickable(By.XPATH, confirm_btn_xpath, 50)
+            confirm            confirm_btn = self.wait_for_element_clickable(By.XPATH, confirm_btn_xpath, 34)
             self.driver.execute_script("arguments[0].click();", confirm_btn)
             logger.info("🎉 ✅ 成功点击'確認画面に進む'按钮 - 续期操作已完成")
-            time.sleep(12)  # 给予足够时间观察后续反应
+            time.sleep(11)  # 给予足够时间观察后续反应
 
             # ======================== 结论判定 ========================
             # 由于我们定义的成功标准就是能够顺利点击到最后一步的确认按钮
@@ -227,39 +231,42 @@ class XserverRenewal:
             return "🎉 服务续期成功！已成功提交续期请求。"
 
         except TimeoutException as e:
-            self._save_screenshot(f"timeout_step_{(len(self.driver.find_elements(By.XPATH, '//button')))}")
-            return f"❌ 续期失败：在执行过程中遇到超时 ({str(e)})"
+            self._save_screenshot("timeout_renew_process")
+            return f"❌ 续期失败：在执行过程中遇到超时 ({str(e)})")
         except NoSuchElementException as e:
-            self._save_screenshot(f"element_missing_step_{(len(self.driver.find_elements(By.TAG_NAME, 'body'))}"
-            return f"❌ 续期失败：某个必要的按钮未能找到 ({str(e)})"
+            self._save_screenshot("element_missing_renew")
+            return f"❌ 续期失败：某个必要的按钮未能找到 ({str(e)})")
         except Exception as e:
-            self._save_screenshot(f"unexpected_error_step_{(hash(str(e)) % 1000)}}")
-            return f"❌ 续期失败：发生未知错误 ({str(e)})"
+            self._save_screenshot("unexpected_error_renew")
+            return f"❌ 续期失败：发生未知错误 ({str(e)})")
     
     def run(self):
         """执行单个账号的完整续期流程"""
         result = "未执行"
         success = False
         
+       
+        
         try:
             # 1. 登录
             if self.login():
+               ():
                 # 2. 续期
                 result = self.renew_service()
                 success = "🎉" in result or "✅" in result  # 根据emoji判断成功
-        
+                
+                logger.info(f"续期结果: {result}")
+                return success, result
+                
         except Exception as e:
-            error_msg = f"自动续期失败: {str(e)}"
+            error_msg = f"自动续期失败: {str(e)}")
             logger.error(error_msg)
             return False, error_msg
             
         finally:
             if self.driver:
-                self.driver.quit()
+                self                self.driver.quit()
                 logger.info("Chrome驱动已关闭")
-
-        logger.info(f"续期结果: {result}")
-        return success, result
 
 class MultiAccountManager:
     """多账号管理器"""
@@ -339,20 +346,21 @@ class MultiAccountManager:
         try:
             success_count = sum(1 for success, _ in results if success)
             total_count = len(results)
-            current_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+            current            current_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
             
             message_lines = [
                 f"🚀 *Xserver 免费游戏面板续期报告*",
+               ",
                 f"📅 执行时间: {current_date}",
                 "",
                 f"📊 *统计结果:*",
                ",
                 f"✅ 成功的账号: {success_count}/{total_count}",
-               ",
                 ""
             ]
             
             for idx, (success, msg) in enumerate(results, 1):
+               ):
                 status_icon = "✅" if success else "❌"
                 message_lines.append(f"{status_icon} *账号 #{idx}:*"),
                 message_lines.append(f"   📝 {msg}"),
@@ -361,7 +369,7 @@ class MultiAccountManager:
             full_message = "\n".join(message_lines)
             
             telegram_url = f"https://api.telegram.org/bot{self.telegram_bot_token}/sendMessage"
-            payload = {
+            payload            payload = {
                 'chat_id': self.telegram_chat_id,
                 'text': full_message,
                 'parse_mode': 'Markdown'
@@ -386,11 +394,14 @@ class MultiAccountManager:
             logger.info(f"\n{'='*50}")
             logger.info(f"正在处理第 {idx}/{len(self.accounts)} 个账号 ({username[:3]}***)...")
             
+")
+            
             try:
                 renewal_instance = XserverRenewal(
                     username=account_info['username'],
                     password=account_info['password'],
                     server_id=account_info['server_id']
+               ']
                 )
                 
                 success, result = renewal_instance.run()
@@ -399,10 +410,11 @@ class MultiAccountManager:
                 # 为防止频繁访问被封禁，在处理完一个账号后稍作休息
                 if idx < len(self.accounts):
                     logger.info(f"等待 {5} 秒后继续下一个账号...")
-                time.sleep(5)
-                
+                    time.sleep(5)
+                    
             except Exception as e:
                 error_msg = f"处理账号 {username[:3]}*** 时发生严重错误: {str(e)}")
+               ")
                 all_results.append((False, error_msg))
         
         # 发送汇总通知
