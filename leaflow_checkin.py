@@ -32,6 +32,8 @@ import os.path
 # 导入 webdriver-manager 相关的库
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.utils import ChromeType
+
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -53,7 +55,7 @@ class XserverRenewal:
         self.setup_driver()
     
     def setup_driver(self):
-        """设置Chrome驱动选项并自动管理ChromeDriver"""
+        """修复 ChromeDriver 初始化问题"""
         chrome_options = Options()
         
         # GitHub Actions环境配置 (无头模式)
@@ -62,27 +64,32 @@ class XserverRenewal:
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--window-size=1920,1080')
-            
+        
         # 反爬虫配置
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
             logger.info("正在配置 ChromeDriver...")
             
-            # 使用新版webdriver-manager直接获取驱动路径
-            driver_path = ChromeDriverManager().install()
-            logger.info(f"驱动路径: {driver_path}")
+            # 关键修复：使用 ChromeType.GOOGLE 确保获取正确的驱动
+            driver_path = ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install()
             
-            # 验证驱动文件是否存在
+            # 手动修正驱动路径（处理解压后的目录结构）
+            if "THIRD_PARTY_NOTICES" in driver_path:
+                base_dir = os.path.dirname(os.path.dirname(driver_path))
+                driver_path = os.path.join(base_dir, "chromedriver-linux64", "chromedriver")
+            
+            logger.info(f"最终驱动路径: {driver_path}")
+            
+            # 验证驱动文件
             if not os.path.exists(driver_path):
                 raise FileNotFoundError(f"驱动文件不存在: {driver_path}")
-                
+            
             # 赋予执行权限
             os.chmod(driver_path, 0o755)
             
-            # 初始化Service
+            # 初始化服务
             service = Service(driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
