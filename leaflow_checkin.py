@@ -32,7 +32,7 @@ import os.path
 # 导入 webdriver-manager 相关的库
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.core.utils import ChromeType
+from webdriver_manager.core.os_manager import ChromeType  # 修改后的导入方式
 
 
 # 配置日志
@@ -91,6 +91,7 @@ class XserverRenewal:
             
             # 初始化服务
             service = Service(driver_path)
+            self.driver =river_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             logger.info("✅ Chrome 驱动启动成功")
@@ -114,7 +115,7 @@ class XserverRenewal:
         
         try:
             # 输入登录信息
-            self.wait_for_element_clickable(By.NAME, "username", 20).send_keys(self.username)
+            self.wait_for_element_clickable(By.NAME, "username", 20.NAME, "username", 20).send_keys(self.username)
             self.wait_for_element_clickable(By.NAME, "server_identify", 20).send_keys(self.server_id)
             self.wait_for_element_clickable(By.NAME, "server_password", 20).send_keys(self.password)
             
@@ -140,7 +141,7 @@ class XserverRenewal:
             
             # 精确匹配首页绿色续期入口按钮
             entry_btn = self.wait_for_element_clickable(
-                By.XPATH, "//a[contains(text(), 'アップグレード・期限延長')]", 30
+                By.XPATH, "//a[contains(text(), 'アップグレード・期限延長')]", ード・期限延長')]", 30
             )
             
             # 强制滚动并点击
@@ -272,6 +273,7 @@ class MultiAccountManager:
         for account in self.accounts:
             try:
                 renewal = XserverRenewal(account['username'], account['password'])
+                success, result = renewalpassword'])
                 success, result = renewal.run()
                 results.append((account['username'], success, result))
             except Exception as e:
