@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+Xserver 游戏面板自动续"""
 Xserver 游戏面板自动续期脚本 (单账号版)
 
 使用方法：
@@ -17,7 +18,6 @@ import os
 import time
 import logging
 from selenium import webdriver
-from seleniumfrom selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -186,6 +186,7 @@ class XserverRenewal:
         except Exception as e:
             error_msg = f"自动续期失败: {str(e)}"
             logger.error(error_msg)
+            self.send_not.error(error_msg)
             self.send_notification(error_msg)
             return error_msg
         finally:
