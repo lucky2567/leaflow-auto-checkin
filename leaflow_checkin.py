@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 """
-Xserver 游戏面板自动续期脚本（基于三张截图元素优化版）
+Xserver 游戏面板自动续期脚本（优化版）
+
+使用方法：
+在运行环境中设置以下环境变量/Secrets：
+1. 单账号模式（推荐）：
+    - XSERVER_USERNAME：您的 Xserver 登录ID
+    - XSERVER_PASSWORD：您的 Xserver 密码
+    - XSERVER_SERVER_ID：您的 Xserver 服务器标识符/客户ID
+2. 多账号模式（次选）：
+    - XSERVER_ACCOUNTS：ID1:Pass1,ID2:Pass2,... (逗号分隔)
+
+可选通知：
+    - TELEGRAM_BOT_TOKEN
+    - TELEGRAM_CHAT_ID
 """
 
 import os
@@ -8,17 +21,17 @@ import time
 import logging
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.web.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, ElementClickInterceptedException, StaleElementReferenceException
 import requests
 from datetime import datetime
 import os.path
 
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -52,7 +65,7 @@ class XserverRenewal:
             chrome_options.add_argument('--window-size=1920,1080')
             
         # 通用配置：反爬虫检测
-        chrome_options.add_argument('--disable-b blink-features=AutomationControlled')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
@@ -129,6 +142,7 @@ class XserverRenewal:
             return True
             
         except Exception as e:
+            self.driver.save_screenshot("login_error.png")
             raise Exception(f"登录失败: {str(e)}")
 
     def renew_service(self):
@@ -264,6 +278,8 @@ class MultiAccountManager:
         # 单账号模式
         single_username = os.getenv('XSERVER_USERNAME', '').strip()
         single_password = os.getenv('XSERVER_PASSWORD', '').strip()
+        
+_PASSWORD', '').strip()
         
         if single_username and single_password:
             accounts.append({'username': single_username, 'password': single_password})
