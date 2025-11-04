@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Xserver 游戏面板自动续期脚本（基于实际页面截图优化版）
+Xserver 游戏面板自动续期脚本（基于三张截图元素优化版）
 """
 
 import os
@@ -52,7 +52,7 @@ class XserverRenewal:
             chrome_options.add_argument('--window-size=1920,1080')
             
         # 通用配置：反爬虫检测
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_argument('--disable-b blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
@@ -111,7 +111,7 @@ class XserverRenewal:
         time.sleep(5)  # 等待登录页加载
         
         try:
-            # 输入登录信息（从截图提取的表单字段）
+            # 输入登录信息
             self.wait_for_element_clickable(By.NAME, "username", 15).send_keys(self.username)
             self.wait_for_element_clickable(By.NAME, "server_identify", 15).send_keys(self.server_id)
             self.wait_for_element_clickable(By.NAME, "server_password", 15).send_keys(self.password)
@@ -132,90 +132,101 @@ class XserverRenewal:
             raise Exception(f"登录失败: {str(e)}")
 
     def renew_service(self):
-        """基于实际页面截图的精确三步续期流程"""
+        """基于三张截图元素的精确三步续期流程"""
         
         logger.info("开始执行三步续期流程...")
         time.sleep(5)  # 确保页面完全加载
         
         try:
-            # ======================== 步骤1：首页点击续期入口 ========================
+            # ======================== 步骤1：点击"アップグレード・期限延長"按钮 ========================
             logger.info("步骤1/3：查找首页续期入口按钮...")
             
-            # 精确匹配首页绿色续期按钮（从截图提取）
-            entry_btn_xpath = "//div[contains(@class, 'free-server-term')]//a[contains(@class, 'btn-renewal') and contains(text(), '期限を延長する')]"
+            # 精确匹配第一张图的元素
+            entry_btn_xpath = "//a[@class='baseBtn btn--loading' and @href='/xmgame/game/freeplan/extend/index']"
             
             try:
                 entry_btn = self.wait_for_element_clickable(By.XPATH, entry_btn_xpath, 20)
-                # 高亮并点击
+                # 高亮元素（调试用）
                 self.driver.execute_script("arguments[0].style.border='3px solid red';", entry_btn)
                 time.sleep(1)
+                # 强制点击
                 self.driver.execute_script("arguments[0].click();", entry_btn)
                 logger.info("✅ 成功点击首页续期入口按钮")
             except TimeoutException:
-                raise Exception("未找到首页续期入口按钮（步骤1失败）")
-            
-            # 等待跳转至套餐对比页
+                self.driver.save_screenshot("step1_error.png")
+                raise Exception("步骤1失败：未找到续期入口按钮")
+
+            # 等待跳转到套餐页
             WebDriverWait(self.driver, 20).until(
                 lambda d: "extend/index" in d.current_url
             )
-            logger.info("已跳转至套餐对比页面")
+            logger.info("已跳转到套餐选择页面")
             time.sleep(5)
+
+            # ======================== 步骤2：点击"期限を延長する"按钮 ========================
+            logger.info("步骤2/3：查找免费套餐续期按钮...")
             
-            # ======================== 步骤2：选择免费套餐 ========================
-            logger.info("步骤2/3：选择免费套餐...")
-            
-            # 精确匹配免费套餐按钮（从截图提取）
-            free_plan_btn_xpath = "//table[contains(@class, 'plan-comparison')]//td[contains(text(), '無料')]/following-sibling::td//button[contains(text(), '期限を延長する')]"
+            # 精确匹配第二张图的元素
+            extend_btn_xpath = "//a[@class='baseBtn btn--loading' and @href='/xmgame/game/freeplan/extend/input']"
             
             try:
-                free_plan_btn = self.wait_for_element_clickable(By.XPATH, free_plan_btn_xpath, 20)
-                # 高亮并点击
-                self.driver.execute_script("arguments[0].style.border='3px solid red';", free_plan_btn)
+                extend_btn = self.wait_for_element_clickable(By.XPATH, extend_btn_xpath, 20)
+                # 高亮元素
+                self.driver.execute_script("arguments[0].style.border='3px solid red';", extend_btn)
                 time.sleep(1)
-                self.driver.execute_script("arguments[0].click();", free_plan_btn)
-                logger.info("✅ 成功选择免费套餐")
+                # 强制点击
+                self.driver.execute_script("arguments[0].click();", extend_btn)
+                logger.info("✅ 成功点击免费套餐续期按钮")
             except TimeoutException:
-                raise Exception("未找到免费套餐按钮（步骤2失败）")
-            
-            # 等待跳转至确认页
+                self.driver.save_screenshot("step2_error.png")
+                raise Exception("步骤2失败：未找到续期按钮")
+
+            # 等待跳转到确认页
             WebDriverWait(self.driver, 20).until(
                 lambda d: "extend/input" in d.current_url
             )
-            logger.info("已跳转至续期确认页面")
+            logger.info("已跳转到续期确认页面")
             time.sleep(5)
+
+            # ======================== 步骤3：点击"確認画面に進む"按钮 ========================
+            logger.info("步骤3/3：查找确认提交按钮...")
             
-            # ======================== 步骤3：提交续期 ========================
-            logger.info("步骤3/3：提交续期确认...")
-            
-            # 精确匹配确认按钮（从截图提取）
-            confirm_btn_xpath = "//div[contains(@class, 'free-server-renewal')]//button[contains(text(), '確認画面に進む')]"
+            # 精确匹配第三张图的元素
+            confirm_btn_xpath = "//button[@class='baseBtn btn--loading' and @type='submit' and @formaction='/xmgame/game/freeplan/extend/conf']"
             
             try:
                 confirm_btn = self.wait_for_element_clickable(By.XPATH, confirm_btn_xpath, 20)
-                # 高亮并点击
+                # 高亮元素
                 self.driver.execute_script("arguments[0].style.border='3px solid red';", confirm_btn)
                 time.sleep(1)
+                # 强制点击
                 self.driver.execute_script("arguments[0].click();", confirm_btn)
-                logger.info("✅ 成功提交续期确认")
+                logger.info("✅ 成功点击确认提交按钮")
             except TimeoutException:
-                raise Exception("未找到确认提交按钮（步骤3失败）")
-            
-            # 验证最终结果
-            WebDriverWait(self.driver, 20).until(
-                lambda d: "更新完了" in d.page_source or "success" in d.current_url
-            )
-            
-            # 检查是否真正续期成功
-            if "無料サーバー契約期限" in self.driver.page_source:
-                return "✅ 服务续期成功！新的到期时间已更新"
-            else:
-                return "⚠️ 续期流程完成，但未检测到到期时间更新"
+                self.driver.save_screenshot("step3_error.png")
+                raise Exception("步骤3失败：未找到确认按钮")
 
-        except TimeoutException as te:
-            self.driver.save_screenshot("timeout_error.png")
-            return f"❌ 续期超时: {str(te)}（请查看timeout_error.png截图）"
+            # 验证结果
+            WebDriverWait(self.driver, 20).until(
+                lambda d: "conf" in d.current_url or "complete" in d.current_url
+            )
+            time.sleep(5)  # 确保结果页面完全加载
+            
+            # 检查续期结果文本
+            if "更新完了" in self.driver.page_source:
+                return "✅ 服务续期成功！新的到期时间已更新"
+            elif "更新済み" in self.driver.page_source:
+                return "⚠️ 服务已是最新状态，无需续期"
+            else:
+                return "⚠️ 续期流程已完成，请手动确认结果"
+
         except Exception as e:
-            return f"❌ 续期失败: {str(e)}"
+            self.driver.save_screenshot("renewal_error.png")
+            with open("debug.log", "a") as f:
+                f.write(f"{datetime.now()} - ERROR: {str(e)}\n")
+                f.write(f"Current URL: {self.driver.current_url}\n")
+                f.write(f"Page Source:\n{self.driver.page_source[:2000]}\n")
+            return f"❌ 续期失败: {str(e)} (已保存截图和日志)"
 
     def run(self):
         """执行完整续期流程"""
@@ -225,7 +236,7 @@ class XserverRenewal:
             if self.login():
                 result = self.renew_service()
                 logger.info(f"续期结果: {result}")
-                return "✅" in result, result, result
+                return "✅" in result or "成功" in result, result, result
             else:
                 return False, "登录未成功", "登录失败"
                 
