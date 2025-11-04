@@ -2,10 +2,8 @@ name: Xserver Auto Renewal
 
 on:
   schedule:
-    # 每天UTC时间01:00运行（北京时间09:00）
-    - cron: '0 1 * * *'
-  # 允许手动触发
-  workflow_dispatch:
+    - cron: '0 1 * * *'  # 每天UTC时间01:00运行（北京时间09:00）
+  workflow_dispatch:      # 允许手动触发
 
 jobs:
   checkin:
@@ -30,7 +28,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y google-chrome-stable
         
-    - name: Run Xserver Renewal Script 🛠️
+    - name: Run Xserver Renewal Script
       env:
         XSERVER_USERNAME: ${{ secrets.XSERVER_USERNAME }}
         XSERVER_PASSWORD: ${{ secrets.XSERVER_PASSWORD }}
@@ -39,13 +37,12 @@ jobs:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         CHROME_HEADLESS: true
-        
       run: |
         python leaflow_checkin.py
         
     - name: Upload debug files
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: xserver-debug-files
         path: |
