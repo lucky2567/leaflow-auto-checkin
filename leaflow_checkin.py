@@ -6,7 +6,7 @@ Xserver 游戏面板自动续期脚本（单账号版）
 import os
 import time
 import logging
-import shutil
+import glob
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -21,14 +21,11 @@ from datetime import datetime
 
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-# 移除了PATTERN的导入，因为新版本库中已不存在
-from webdriver_manager.core.utils import read_version_from_cmd
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# 以下代码保持不变...
 class XserverRenewal:
     def __init__(self, username, password, server_id):
         self.username = username
@@ -42,7 +39,7 @@ class XserverRenewal:
         self.setup_driver()
     
     def setup_driver(self):
-        """设置Chrome驱动（修复驱动路径问题）"""
+        """设置Chrome驱动（彻底修复路径问题）"""
         chrome_options = Options()
         
         if os.getenv('GITHUB_ACTIONS') or os.getenv('CHROME_HEADLESS', 'true').lower() == 'true':
@@ -61,19 +58,24 @@ class XserverRenewal:
         try:
             logger.info("正在配置 ChromeDriver...")
             
-            # 手动获取正确的ChromeDriver路径（核心修复）
-            driver_path = ChromeDriverManager().install()
-            # 从安装路径中找到真正的可执行文件
-            if 'chromedriver-linux64' in driver_path:
-                # 修正路径：找到chromedriver可执行文件
-                driver_dir = os.path.dirname(driver_path)
-                actual_driver_path = os.path.join(driver_dir, 'chromedriver')
-                if os.path.exists(actual_driver_path) and os.access(actual_driver_path, os.X_OK):
-                    driver_path = actual_driver_path
-                else:
-                    raise FileNotFoundError(f"未找到可执行的chromedriver: {actual_driver_path}")
+            # 核心修复：获取驱动缓存目录，直接查找可执行文件
+            driver_cache_dir = ChromeDriverManager().install()
+            # 向上追溯找到真正的驱动目录（排除文件路径）
+            while not os.path.isdir(driver_cache_dir):
+                driver_cache_dir = os.path.dirname(driver_cache_dir)
+            
+            # 递归查找所有chromedriver可执行文件
+            chromedriver_paths = glob.glob(os.path.join(driver_cache_dir, '**', 'chromedriver'), recursive=True)
+            # 筛选出可执行的文件
+            valid_driver_paths = [path for path in chromedriver_paths if os.path.isfile(path) and os.access(path, os.X_OK)]
+            
+            if not valid_driver_paths:
+                raise FileNotFoundError(f"在缓存目录中未找到可执行的chromedriver: {driver_cache_dir}")
+            
+            # 使用第一个有效路径
+            driver_path = valid_driver_paths[0]
+            logger.info(f"找到可执行的ChromeDriver: {driver_path}")
 
-            logger.info(f"使用正确的驱动路径: {driver_path}")
             service = Service(driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
