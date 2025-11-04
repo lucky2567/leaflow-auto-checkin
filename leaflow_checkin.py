@@ -54,7 +54,7 @@ class XserverRenewal:
         self.setup_driver()
     
     def setup_driver(self):
-        """修复后的驱动初始化方法"""
+        """修复ChromeDriver初始化问题"""
         chrome_options = Options()
         
         # GitHub Actions环境配置 (无头模式)
@@ -67,27 +67,32 @@ class XserverRenewal:
         # 反爬虫配置
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
-            logger.info("正在自动配置 ChromeDriver...")
+            logger.info("正在配置 ChromeDriver...")
             
-            # 使用新版webdriver-manager直接获取驱动路径
+            # 关键修复：使用ChromeDriverManager并手动修正路径
             driver_path = ChromeDriverManager().install()
-            logger.info(f"驱动路径: {driver_path}")
             
-            # 验证驱动文件是否存在
+            # 修正路径问题（处理THIRD_PARTY_NOTICES错误）
+            if "THIRD_PARTY_NOTICES" in driver_path:
+                base_dir = os.path.dirname(os.path.dirname(driver_path))
+                driver_path = os.path.join(base_dir, "chromedriver-linux64", "chromedriver")
+            
+            logger.info(f"最终驱动路径: {driver_path}")
+            
+            # 验证驱动文件
             if not os.path.exists(driver_path):
                 raise FileNotFoundError(f"驱动文件不存在: {driver_path}")
-                
+            
             # 赋予执行权限
             os.chmod(driver_path, 0o755)
             
-            # 初始化Service
+            # 初始化服务
             service = Service(driver_path)
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            logger.info("Chrome 驱动启动成功")
+            logger.info("✅ Chrome 驱动启动成功")
             
         except Exception as e:
             logger.error(f"驱动初始化失败: {e}")
